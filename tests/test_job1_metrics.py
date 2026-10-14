@@ -17,8 +17,10 @@ def test_duration_metrics(spark, tmp_path):
     assert row["preparation_time_min"] == 13.0
     assert row["delivery_time_min"] == 25.0
     assert row["fulfillment_time_min"] == 40.0
+    assert row["delivery_speed_kmph"] == 12.0
     assert list(row.asDict()) == ORDER_FIELDS + [
         "preparation_time_min", "delivery_time_min", "fulfillment_time_min",
+        "delivery_speed_kmph",
     ]
     for field in NUMERIC_FIELDS:
         assert isinstance(row[field], float)
@@ -40,3 +42,15 @@ def test_duration_metrics_with_seconds(spark, tmp_path, delivered, delivery, ful
     assert row["delivery_time_min"] == delivery
     assert row["fulfillment_time_min"] == fulfillment
     assert row["delivered_timestamp"] == delivered
+
+
+def test_speed_rounded_to_two_places(spark, tmp_path):
+    # 7.3 km in 17 min = 25.7647... km/h
+    (row,) = metrics(spark, tmp_path, [rec(distance_km=7.3, delivered_timestamp="2026-09-01 10:32:00")])
+    assert row["delivery_speed_kmph"] == 25.76
+
+
+def test_speed_uses_unrounded_delivery_minutes(spark, tmp_path):
+    (row,) = metrics(spark, tmp_path, [rec(delivered_timestamp="2026-09-01 10:15:01")])
+    assert row["delivery_time_min"] == 0.02
+    assert row["delivery_speed_kmph"] == 18000.0

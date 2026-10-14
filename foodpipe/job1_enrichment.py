@@ -46,6 +46,10 @@ def clean_orders(raw: DataFrame) -> DataFrame:
 
 
 def enrich_orders(clean: DataFrame) -> DataFrame:
+    delivery_minutes = (
+        F.unix_timestamp(F.col("_ts_delivered"))
+        - F.unix_timestamp(F.col("_ts_picked_up"))
+    ) / 60.0
     durations = [
         ("preparation_time_min", "_ts_accepted", "_ts_picked_up"),
         ("delivery_time_min", "_ts_picked_up", "_ts_delivered"),
@@ -63,6 +67,9 @@ def enrich_orders(clean: DataFrame) -> DataFrame:
             ).alias(name)
             for name, start, end in durations
         ],
+        F.round(F.col("distance_km") / (delivery_minutes / 60.0), 2).alias(
+            "delivery_speed_kmph"
+        ),
     )
 
 
