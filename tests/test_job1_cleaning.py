@@ -108,6 +108,11 @@ def test_nonpositive_distance_dropped(spark, tmp_path, value):
     assert clean(spark, tmp_path, [rec(distance_km=value)]) == []
 
 
+@pytest.mark.parametrize("value", [0, -10])
+def test_nonpositive_amount_dropped(spark, tmp_path, value):
+    assert clean(spark, tmp_path, [rec(order_amount=value)]) == []
+
+
 def test_extra_fields_ignored(spark, tmp_path):
     rows = clean(spark, tmp_path, [rec(note="x", record_type="y")])
     assert len(rows) == 1
