@@ -90,6 +90,19 @@ def test_invalid_timestamp_dropped(spark, tmp_path, field, value):
     assert [r["order_id"] for r in rows] == ["T2"]
 
 
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"accepted_timestamp": "2026-09-01 09:59:00"},            # accepted before order
+        {"picked_up_timestamp": "2026-09-01 10:01:00"},           # picked up before accepted
+        {"delivered_timestamp": "2026-09-01 10:10:00"},           # delivered before picked up
+        {"delivered_timestamp": "2026-09-01 10:15:00"},           # zero delivery time
+    ],
+)
+def test_out_of_order_timestamps_dropped(spark, tmp_path, overrides):
+    assert clean(spark, tmp_path, [rec(**overrides)]) == []
+
+
 def test_extra_fields_ignored(spark, tmp_path):
     rows = clean(spark, tmp_path, [rec(note="x", record_type="y")])
     assert len(rows) == 1

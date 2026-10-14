@@ -36,4 +36,7 @@ def clean_orders(raw: DataFrame) -> DataFrame:
             parsed, F.try_to_timestamp(F.col(field), F.lit(TIMESTAMP_FORMAT))
         )
         clean = clean.filter(F.col(parsed).isNotNull())
+    clean = clean.filter(F.col("_ts_order") <= F.col("_ts_accepted"))
+    clean = clean.filter(F.col("_ts_accepted") <= F.col("_ts_picked_up"))
+    clean = clean.filter(F.col("_ts_picked_up") < F.col("_ts_delivered"))
     return clean.select(*ORDER_FIELDS, *parsed_columns)
