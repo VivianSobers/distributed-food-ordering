@@ -1,9 +1,14 @@
 import json
+from datetime import datetime, timezone
 
 import pytest
 
 from foodpipe.job1_enrichment import clean_orders, load_raw_orders
-from foodpipe.schema import ORDER_FIELDS
+from foodpipe.schema import ORDER_FIELDS, TIMESTAMP_FIELDS
+
+PARSED_TIMESTAMP_FIELDS = [
+    "_ts_order", "_ts_accepted", "_ts_picked_up", "_ts_expected", "_ts_delivered",
+]
 
 BASE = {
     "order_id": "T1",
@@ -43,6 +48,12 @@ def test_valid_record_kept(spark, tmp_path):
     rows = clean(spark, tmp_path, [rec()])
     assert len(rows) == 1
     assert rows[0]["order_id"] == "T1"
+    for field, parsed in zip(TIMESTAMP_FIELDS, PARSED_TIMESTAMP_FIELDS):
+        assert rows[0][field] == BASE[field]
+        expected = datetime.strptime(BASE[field], "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=timezone.utc
+        )
+        assert rows[0][parsed].timestamp() == expected.timestamp()
 
 
 @pytest.mark.parametrize("line", ['{"order_id": "T9", "city": ', "not json at all", "42"])
@@ -67,16 +78,29 @@ def test_blank_string_dropped(spark, tmp_path, value):
     assert clean(spark, tmp_path, [rec(city=value)]) == []
 
 
+@pytest.mark.parametrize(
+    "field",
+    ["order_timestamp", "accepted_timestamp", "picked_up_timestamp",
+     "expected_delivery_timestamp", "delivered_timestamp"],
+)
+@pytest.mark.parametrize("value", ["bad", "not-a-timestamp", "2026-13-45 99:00:00"])
+def test_invalid_timestamp_dropped(spark, tmp_path, field, value):
+    assert spark.conf.get("spark.sql.ansi.enabled") == "true"
+    rows = clean(spark, tmp_path, [rec(**{field: value}), rec(order_id="T2")])
+    assert [r["order_id"] for r in rows] == ["T2"]
+
+
 def test_extra_fields_ignored(spark, tmp_path):
     rows = clean(spark, tmp_path, [rec(note="x", record_type="y")])
     assert len(rows) == 1
     assert "note" not in rows[0].asDict()
+    assert list(rows[0].asDict()) == ORDER_FIELDS + PARSED_TIMESTAMP_FIELDS
 
 
 def test_repeated_clean_reads_current_file_after_malformed_lines(spark, tmp_path):
     rows = clean(spark, tmp_path, ["not json at all", rec()])
     assert [row["order_id"] for row in rows] == ["T1"]
-    assert list(rows[0].asDict()) == ORDER_FIELDS
+    assert list(rows[0].asDict()) == ORDER_FIELDS + PARSED_TIMESTAMP_FIELDS
     assert clean(spark, tmp_path, ["not json at all"]) == []
     rows = clean(spark, tmp_path, ["42", rec(order_id="T2")])
     assert [row["order_id"] for row in rows] == ["T2"]
