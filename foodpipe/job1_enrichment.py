@@ -42,4 +42,4 @@ def clean_orders(raw: DataFrame) -> DataFrame:
     clean = clean.filter(F.col("distance_km") > 0)
     clean = clean.filter(F.col("order_amount") > 0)
     clean = clean.filter(F.col("status") == "DELIVERED")
-    return clean.select(*ORDER_FIELDS, *parsed_columns)
+    return clean.select(*ORDER_FIELDS, *parsed_columns).dropDuplicates(ORDER_FIELDS)

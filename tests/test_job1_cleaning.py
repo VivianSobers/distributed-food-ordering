@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -116,6 +117,43 @@ def test_nonpositive_amount_dropped(spark, tmp_path, value):
 @pytest.mark.parametrize("status", ["CANCELLED", "PENDING", "REFUNDED", "FAILED", "delivered"])
 def test_non_delivered_status_dropped(spark, tmp_path, status):
     assert clean(spark, tmp_path, [rec(status=status)]) == []
+
+
+def test_exact_duplicates_counted_once(spark, tmp_path):
+    assert len(clean(spark, tmp_path, [rec(), rec(), rec()])) == 1
+
+
+def test_duplicate_with_different_key_order_counted_once(spark, tmp_path):
+    reordered = json.dumps(dict(reversed(list(BASE.items()))))
+    assert len(clean(spark, tmp_path, [rec(), reordered])) == 1
+
+
+def test_same_order_id_different_content_both_kept(spark, tmp_path):
+    assert len(clean(spark, tmp_path, [rec(), rec(order_amount=600)])) == 2
+
+
+def test_dirty_variant_of_valid_order_dropped(spark, tmp_path):
+    rows = clean(spark, tmp_path, [rec(accepted_timestamp="bad"), rec()])
+    assert [r["accepted_timestamp"] for r in rows] == ["2026-09-01 10:02:00"]
+
+
+def test_real_dataset_cleaning(spark):
+    path = Path(__file__).resolve().parents[1] / "data" / "order.jsonl"
+    raw = load_raw_orders(spark, path)
+    try:
+        rows = clean_orders(raw).collect()
+    finally:
+        raw.unpersist(blocking=True)
+    seen = set()
+    for row in rows:
+        assert row["status"] == "DELIVERED"
+        assert row["distance_km"] > 0
+        assert row["order_amount"] > 0
+        assert row["order_id"] is not None
+        assert row["order_id"] != "BROKEN"
+        values = tuple(row[field] for field in ORDER_FIELDS)
+        assert values not in seen
+        seen.add(values)
 
 
 def test_extra_fields_ignored(spark, tmp_path):
