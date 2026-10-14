@@ -50,6 +50,23 @@ def test_malformed_json_dropped(spark, tmp_path, line):
     assert len(clean(spark, tmp_path, [line, rec()])) == 1
 
 
+@pytest.mark.parametrize("field", ORDER_FIELDS)
+def test_missing_field_dropped(spark, tmp_path, field):
+    r = dict(BASE)
+    del r[field]
+    assert clean(spark, tmp_path, [json.dumps(r)]) == []
+
+
+@pytest.mark.parametrize("field", ORDER_FIELDS)
+def test_null_field_dropped(spark, tmp_path, field):
+    assert clean(spark, tmp_path, [rec(**{field: None})]) == []
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_blank_string_dropped(spark, tmp_path, value):
+    assert clean(spark, tmp_path, [rec(city=value)]) == []
+
+
 def test_extra_fields_ignored(spark, tmp_path):
     rows = clean(spark, tmp_path, [rec(note="x", record_type="y")])
     assert len(rows) == 1
