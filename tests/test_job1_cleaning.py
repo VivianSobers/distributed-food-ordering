@@ -103,6 +103,11 @@ def test_out_of_order_timestamps_dropped(spark, tmp_path, overrides):
     assert clean(spark, tmp_path, [rec(**overrides)]) == []
 
 
+@pytest.mark.parametrize("value", [0, -2, -0.5])
+def test_nonpositive_distance_dropped(spark, tmp_path, value):
+    assert clean(spark, tmp_path, [rec(distance_km=value)]) == []
+
+
 def test_extra_fields_ignored(spark, tmp_path):
     rows = clean(spark, tmp_path, [rec(note="x", record_type="y")])
     assert len(rows) == 1
