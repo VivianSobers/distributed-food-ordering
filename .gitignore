@@ -6,3 +6,7 @@ __pycache__/
 *.log
 spark-warehouse/
 metastore_db/
+output/
+kafka/generated/
+.kafka-local/
+.pytest_cache/
