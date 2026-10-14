@@ -113,6 +113,11 @@ def test_nonpositive_amount_dropped(spark, tmp_path, value):
     assert clean(spark, tmp_path, [rec(order_amount=value)]) == []
 
 
+@pytest.mark.parametrize("status", ["CANCELLED", "PENDING", "REFUNDED", "FAILED", "delivered"])
+def test_non_delivered_status_dropped(spark, tmp_path, status):
+    assert clean(spark, tmp_path, [rec(status=status)]) == []
+
+
 def test_extra_fields_ignored(spark, tmp_path):
     rows = clean(spark, tmp_path, [rec(note="x", record_type="y")])
     assert len(rows) == 1
