@@ -43,3 +43,28 @@ def clean_orders(raw: DataFrame) -> DataFrame:
     clean = clean.filter(F.col("order_amount") > 0)
     clean = clean.filter(F.col("status") == "DELIVERED")
     return clean.select(*ORDER_FIELDS, *parsed_columns).dropDuplicates(ORDER_FIELDS)
+
+
+def enrich_orders(clean: DataFrame) -> DataFrame:
+    durations = [
+        ("preparation_time_min", "_ts_accepted", "_ts_picked_up"),
+        ("delivery_time_min", "_ts_picked_up", "_ts_delivered"),
+        ("fulfillment_time_min", "_ts_order", "_ts_delivered"),
+    ]
+    return clean.select(
+        *[
+            F.col(field).cast("double") if field in NUMERIC_FIELDS else F.col(field)
+            for field in ORDER_FIELDS
+        ],
+        *[
+            F.round(
+                (F.unix_timestamp(F.col(end)) - F.unix_timestamp(F.col(start))) / 60.0,
+                2,
+            ).alias(name)
+            for name, start, end in durations
+        ],
+    )
+
+
+def build_order_metrics(spark: SparkSession, input_path: str | Path) -> DataFrame:
+    return enrich_orders(clean_orders(load_raw_orders(spark, input_path)))
