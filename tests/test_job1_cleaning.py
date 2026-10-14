@@ -127,3 +127,8 @@ def test_repeated_clean_reads_current_file_after_malformed_lines(spark, tmp_path
     assert clean(spark, tmp_path, ["not json at all"]) == []
     rows = clean(spark, tmp_path, ["42", rec(order_id="T2")])
     assert [row["order_id"] for row in rows] == ["T2"]
+
+
+@pytest.mark.parametrize("field", ["distance_km", "order_amount", "delivery_fee"])
+def test_numeric_sent_as_string_dropped(spark, tmp_path, field):
+    assert clean(spark, tmp_path, [rec(**{field: "5.0"})]) == []
