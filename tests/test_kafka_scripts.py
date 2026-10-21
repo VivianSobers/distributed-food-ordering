@@ -271,3 +271,71 @@ def test_render_config_rejects_bad_role(tmp_path, generated_configs):
     result = run_common(tmp_path, 'bash "$REPO_ROOT/kafka/render_config.sh" vm1')
     assert result.returncode != 0
     assert "vm1" in result.stderr
+
+
+@pytest.fixture
+def storage_stub(tmp_path):
+    kafka_home = tmp_path / "fake kafka"
+    script = kafka_home / "bin/kafka-storage.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text('#!/bin/bash\nset -euo pipefail\nprintf \'%s\\n\' "$@" > "$STORAGE_ARGS"\n')
+    script.chmod(0o755)
+    return kafka_home, tmp_path / "storage arguments"
+
+
+def test_format_storage_bash_syntax():
+    result = subprocess.run(
+        ["bash", "-n", str(REPO_ROOT / "kafka/format_storage.sh")],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("role", ["vm2", "vm3"])
+@pytest.mark.parametrize("matching", [True, False])
+def test_format_storage_preserves_existing_metadata(
+    tmp_path, generated_configs, storage_stub, role, matching,
+):
+    kafka_home, arguments = storage_stub
+    data_root = tmp_path / "data root"
+    metadata = data_root / role / "meta.properties"
+    metadata.parent.mkdir(parents=True)
+    cluster_id = "jbLv2nD5Tf6eYZrYdejohg" if matching else "another-cluster"
+    original = f"# Existing storage\nversion=1\ncluster.id={cluster_id}\nnode.id=1\n".encode()
+    metadata.write_bytes(original)
+    before = metadata.stat()
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/format_storage.sh" "$TEST_ROLE"',
+        profile="cluster", TEST_ROLE=role, KAFKA_DATA_ROOT=data_root,
+        KAFKA_HOME=kafka_home, STORAGE_ARGS=arguments,
+    )
+    assert metadata.read_bytes() == original
+    assert metadata.stat().st_mtime_ns == before.st_mtime_ns
+    assert metadata.stat().st_ino == before.st_ino
+    assert not arguments.exists()
+    if matching:
+        assert result.returncode == 0, result.stderr
+        assert f"already formatted (cluster id {cluster_id})" in result.stdout
+    else:
+        assert result.returncode != 0
+        assert "cluster" in result.stderr.lower()
+        assert "mismatch" in result.stderr.lower()
+        assert "wipe" in result.stderr.lower()
+        assert str(metadata.parent) in result.stderr
+
+
+@pytest.mark.parametrize("role", ["vm2", "vm3"])
+def test_format_storage_fresh_directory_command(tmp_path, generated_configs, storage_stub, role):
+    kafka_home, arguments = storage_stub
+    data_root = tmp_path / "fresh data"
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/format_storage.sh" "$TEST_ROLE"',
+        profile="cluster", TEST_ROLE=role, KAFKA_DATA_ROOT=data_root,
+        KAFKA_HOME=kafka_home, STORAGE_ARGS=arguments,
+    )
+    assert result.returncode == 0, result.stderr
+    config_path = generated_configs / "cluster" / f"server-{role}.properties"
+    assert arguments.read_text().splitlines() == [
+        "format", "-t", "jbLv2nD5Tf6eYZrYdejohg", "-c", str(config_path),
+    ]
+    assert f"log.dirs={data_root / role}" in config_path.read_text().splitlines()
