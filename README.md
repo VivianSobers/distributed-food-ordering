@@ -91,3 +91,59 @@ Job 2 reads `order_metrics_landed.jsonl`, drops malformed records and exact dupl
 Within each restaurant or city, `delayed_order_count` counts records whose `delivery_status` is `DELAYED`, and `delay_rate_pct = delayed_order_count / order_count * 100`. Averages and delay rates use half-up rounding to two decimal places; counts are integers.
 
 Each Spark output is one named file, rather than a directory of Spark part files.
+
+## Tech stack
+
+The course pins Java, Python, Spark and Kafka to the versions below. Python package constraints are recorded in `requirements.txt`.
+
+| Component | Version / configuration |
+| --- | --- |
+| Java | 11 |
+| Python | 3.10 |
+| Apache Spark / PySpark | 3.3.4, Scala 2.12; local mode |
+| Apache Kafka | 3.9.2 (`kafka_2.12-3.9.2`), KRaft mode |
+| kafka-python | 3.0.11 |
+| pandas | `>=2.2,<3`, for the independent reference implementation |
+| pytest | `>=8` |
+
+## Getting started
+
+### Prerequisites and environment
+
+Install Java 11 and Python 3.10. Run the following from the repository root to create the project environment and install its dependencies:
+
+```bash
+python3.10 -m venv .venv && .venv/bin/pip install -r requirements.txt
+```
+
+If the default Java is not version 11, set `JAVA_HOME` to your Java 11 installation before running Spark or the tests. Replace the placeholder path with the actual installation directory:
+
+```bash
+export JAVA_HOME=/path/to/java-11
+```
+
+### Run the Spark jobs
+
+These commands process existing local input files. Stage 1 requires `output/orders_landed.jsonl` on VM4; Stage 2 requires `output/order_metrics_landed.jsonl` on VM1. Run each command from the repository root on its respective machine.
+
+Spark Job 1:
+
+```bash
+.venv/bin/python -m foodpipe.job1_enrichment --input output/orders_landed.jsonl --output output/order_metrics.jsonl
+```
+
+Spark Job 2:
+
+```bash
+.venv/bin/python -m foodpipe.job2_analytics --input output/order_metrics_landed.jsonl --restaurant-out output/restaurant_summary.csv --city-out output/city_summary.csv
+```
+
+The generated `output/` directory is git-ignored. Each job creates the output parent directory as needed and overwrites its named output files on reruns.
+
+### Run the tests
+
+From the repository root, with Java 11 available:
+
+```bash
+.venv/bin/python -m pytest -q
+```
