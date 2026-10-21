@@ -35,6 +35,18 @@ role_log_dir() {
     printf '%s/logs-%s\n' "$KAFKA_DATA_ROOT" "$1"
 }
 
+broker_pid() {
+    local config_pattern character replacement pids
+    config_pattern="$(role_config_path "${1:-}")" || return 1
+    for character in '\' '.' '[' ']' '(' ')' '{' '}' '*' '+' '?' '^' '$' '|'; do
+        replacement="\\$character"
+        config_pattern="${config_pattern//"$character"/"$replacement"}"
+    done
+    config_pattern="(^|[[:space:]])${config_pattern}([[:space:]]|$)"
+    pids="$(pgrep -f -- "$config_pattern")" || return 1
+    printf '%s\n' "${pids%%$'\n'*}"
+}
+
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 FOODPIPE_ENV="${FOODPIPE_ENV:-cluster}"
 [[ -f "$REPO_ROOT/config/$FOODPIPE_ENV.env" ]] ||

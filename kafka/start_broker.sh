@@ -14,18 +14,7 @@ data_dir="$(role_data_dir "$role")"
 [[ -f "$data_dir/meta.properties" ]] ||
     die "Missing $data_dir/meta.properties; run bash kafka/format_storage.sh $role first"
 
-config_pattern="$config_path"
-for character in '\' '.' '[' ']' '(' ')' '{' '}' '*' '+' '?' '^' '$' '|'; do
-    replacement="\\$character"
-    config_pattern="${config_pattern//"$character"/"$replacement"}"
-done
-config_pattern="(^|[[:space:]])${config_pattern}([[:space:]]|$)"
-broker_pid() {
-    local pids
-    pids="$(pgrep -f -- "$config_pattern")" || return 1
-    printf '%s\n' "${pids%%$'\n'*}"
-}
-if pid="$(broker_pid)"; then
+if pid="$(broker_pid "$role")"; then
     printf '%s broker already running (pid %s)\n' "$role" "$pid"
     exit 0
 fi
@@ -56,7 +45,7 @@ if [[ "${FOODPIPE_SKIP_PORT_WAIT:-0}" != 1 ]]; then
         sleep 1
     done
 fi
-if ! pid="$(broker_pid)"; then
+if ! pid="$(broker_pid "$role")"; then
     [[ -n "${launcher_pid:-}" ]] || die "Port $port is open but no broker process uses $config_path"
     pid="$launcher_pid"
 fi

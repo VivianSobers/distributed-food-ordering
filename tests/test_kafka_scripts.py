@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 
 import pytest
@@ -432,3 +433,68 @@ def test_start_broker_already_running_skips_start(tmp_path, generated_configs, b
     assert "43210" in result.stdout
     assert "already running" in result.stdout
     assert not broker_start_stub["START_ARGS"].exists()
+
+
+@pytest.fixture
+def stop_sandbox(tmp_path):
+    root = tmp_path / "isolated repo [stop]"
+    (root / "kafka").mkdir(parents=True)
+    (root / "config").mkdir()
+    for name in ("common.sh", "stop_broker.sh"):
+        shutil.copyfile(REPO_ROOT / "kafka" / name, root / "kafka" / name)
+    shutil.copyfile(REPO_ROOT / "config/cluster.local.env", root / "config/cluster.local.env")
+    env = os.environ.copy()
+    env["FOODPIPE_ENV"] = "cluster.local"
+    return root, env
+
+
+def test_stop_broker_bash_syntax():
+    result = subprocess.run(
+        ["bash", "-n", str(REPO_ROOT / "kafka/stop_broker.sh")],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_stop_broker_not_running(stop_sandbox):
+    root, env = stop_sandbox
+    result = subprocess.run(
+        ["bash", str(root / "kafka/stop_broker.sh"), "vm3"], env=env,
+        capture_output=True, text=True, timeout=5,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "vm3 broker is not running"
+
+
+@pytest.mark.parametrize("other_config", ["suffix", "environment"])
+def test_stop_broker_terminates_only_exact_config(stop_sandbox, other_config):
+    root, env = stop_sandbox
+    config = root / "kafka/generated/cluster.local/server-vm3.properties"
+    other = str(config) + ".other" if other_config == "suffix" else str(
+        root / "kafka/generated/cluster/server-vm3.properties"
+    )
+    processes = []
+    stopper = None
+    try:
+        for path in (str(config), other):
+            processes.append(subprocess.Popen(
+                [f"dummy-broker {path}", "300"], executable=shutil.which("sleep"),
+            ))
+        target, unrelated = processes
+        stopper = subprocess.Popen(
+            ["bash", str(root / "kafka/stop_broker.sh"), "vm3"], env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert target.wait(timeout=5) == -15
+        stdout, stderr = stopper.communicate(timeout=5)
+        assert stopper.returncode == 0, stderr
+        assert f"vm3 broker stopped (pid {target.pid})" in stdout
+        assert unrelated.poll() is None
+    finally:
+        if stopper is not None and stopper.poll() is None:
+            stopper.kill()
+            stopper.communicate()
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
