@@ -564,3 +564,105 @@ def test_create_topics_refuses_missing_brokers(tmp_path, topic_stubs, output, st
     assert result.returncode != 0
     assert f"Only {count} of 2 brokers are up; start VM3 first" in result.stderr
     assert not topic_stubs["TOPIC_ARGS"].exists()
+
+
+@pytest.fixture
+def reset_stubs(tmp_path, topic_stubs):
+    topic_stubs["BROKER_OUTPUT"].write_text(
+        "localhost:19092 (id: 1 rack: null) -> (\n)\n"
+        "localhost:19094 (id: 2 rack: null) -> (\n)\n"
+    )
+    script = topic_stubs["KAFKA_HOME"] / "bin/kafka-topics.sh"
+    script.write_text(r'''#!/bin/bash
+set -euo pipefail
+printf '%s\t' "$@" >> "$TOPIC_ARGS"
+printf '\n' >> "$TOPIC_ARGS"
+action=
+topic=
+while (( $# )); do
+    case "$1" in
+        --delete|--list|--create) action="$1" ;;
+        --topic) topic="$2"; shift ;;
+    esac
+    shift
+done
+count=0
+[[ ! -f "$LIST_COUNT" ]] || read -r count < "$LIST_COUNT"
+case "$action" in
+    --delete)
+        if [[ "${DELETE_ERROR:-0}" == 1 ]]; then
+            printf 'Permission denied\n' >&2
+            exit 1
+        fi
+        if [[ "$topic" == order_metrics ]]; then
+            printf 'Topic order_metrics does not exist\n' >&2
+            exit 1
+        fi
+        ;;
+    --list)
+        count=$((count + 1))
+        printf '%s\n' "$count" > "$LIST_COUNT"
+        if (( count <= DISAPPEAR_AFTER )); then
+            printf 'orders\n'
+            if (( count == 1 )); then printf 'order_metrics\n'; fi
+        else
+            printf 'orders_archive\norder_metrics_backup\n'
+        fi
+        ;;
+    --create) (( count > DISAPPEAR_AFTER )) || exit 99 ;;
+esac
+''')
+    sleep = tmp_path / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n")
+    sleep.chmod(0o755)
+    return {
+        **topic_stubs, "LIST_COUNT": tmp_path / "list count", "DISAPPEAR_AFTER": "1",
+        "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+    }
+
+
+def test_reset_topics_bash_syntax():
+    result = subprocess.run(
+        ["bash", "-n", str(REPO_ROOT / "kafka/reset_topics.sh")],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("list_delay", [1, 2])
+def test_reset_topics_waits_for_deletion_before_creation(tmp_path, reset_stubs, list_delay):
+    reset_stubs["DISAPPEAR_AFTER"] = str(list_delay)
+    result = run_common(tmp_path, 'bash "$REPO_ROOT/kafka/reset_topics.sh"', **reset_stubs)
+    assert result.returncode == 0, result.stderr
+    calls = [line.rstrip("\t").split("\t")
+             for line in reset_stubs["TOPIC_ARGS"].read_text().splitlines()]
+    bootstrap = ["--bootstrap-server", "127.0.0.1:19092,127.0.0.1:19094"]
+    assert calls[:2] == [bootstrap + ["--delete", "--topic", topic]
+                         for topic in ("orders", "order_metrics")]
+    assert calls[2:3 + list_delay] == [bootstrap + ["--list"]] * (list_delay + 1)
+    assert calls[3 + list_delay:] == [
+        bootstrap + ["--create", "--if-not-exists", "--topic", topic,
+                     "--partitions", "2", "--replication-factor", "2"]
+        for topic in ("orders", "order_metrics")
+    ]
+    assert "Deleting topic orders" in result.stdout
+    assert "Created topic order_metrics" in result.stdout
+
+
+def test_reset_topics_timeout_does_not_create(tmp_path, reset_stubs):
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/reset_topics.sh"',
+        FOODPIPE_TOPIC_DELETE_TIMEOUT="0", **reset_stubs,
+    )
+    assert result.returncode != 0
+    assert "timed out" in result.stderr.lower()
+    assert "--create" not in reset_stubs["TOPIC_ARGS"].read_text()
+
+
+def test_reset_topics_does_not_ignore_other_delete_errors(tmp_path, reset_stubs):
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/reset_topics.sh"', DELETE_ERROR="1", **reset_stubs,
+    )
+    assert result.returncode != 0
+    assert "Permission denied" in result.stderr
+    assert not reset_stubs["LIST_COUNT"].exists()
