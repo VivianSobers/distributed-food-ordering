@@ -128,12 +128,16 @@ flowchart TD
 <a id="cluster-topology"></a>
 ## Cluster Topology & Node Roles
 
+<div align="center">
+
 | Node | Teammate | Services | Role in the failure test |
 | :--- | :--- | :--- | :--- |
 | **VM1** | Dhriti ([@DHRITIRAJESH](https://github.com/DHRITIRAJESH)) | Producer 1 publishes `data/order.jsonl` to `orders`.<br>Consumer 2 lands `order_metrics` into `order_metrics_landed.jsonl`.<br>Spark Job 2 writes the two summary CSVs. | Client; keeps consuming through the surviving broker. |
 | **VM2** | Vivian ([@VivianSobers](https://github.com/VivianSobers)) | KRaft controller and Kafka broker 1 (`node.id=1`, port `9092`, controller port `9093`). | Must stay up for the whole demo. |
 | **VM3** | Dhanya ([@DhanyaSPrasad](https://github.com/DhanyaSPrasad)) | Kafka broker 2 (`node.id=2`, port `9092`). | The broker that gets stopped. |
 | **VM4** | Navya ([@nav-yeah](https://github.com/nav-yeah)) | Consumer 1 lands `orders` into `orders_landed.jsonl`.<br>Spark Job 1 writes `order_metrics.jsonl`.<br>Producer 2 publishes that file to `order_metrics`. | Client. |
+
+</div>
 
 > [!NOTE]
 > A spare standby machine on the same ZeroTier network is set up to take over VM1, VM3 or VM4 if a laptop fails. It cannot replace VM2 once the demo has started, since that would need a new controller.
@@ -154,6 +158,10 @@ Spark Job 1 reads `orders_landed.jsonl`.
 
 #### Cleaning rules
 
+<details>
+<summary><b>Expand data cleaning and validation rules (7 filters)</b></summary>
+<br>
+
 - Malformed JSON lines are dropped.
 - All 14 fields are required. A missing field, `null`, an empty string or a whitespace-only string makes the record invalid. Extra fields are ignored.
 - `distance_km`, `order_amount` and `delivery_fee` must be JSON numbers. A quoted number such as `"5.6"` is invalid.
@@ -166,7 +174,11 @@ Spark Job 1 reads `orders_landed.jsonl`.
 
 Spark runs with `spark.sql.ansi.enabled=false` and `spark.sql.legacy.timeParserPolicy=CORRECTED`, so a bad timestamp becomes null and the record is dropped instead of crashing the job. Durations are computed in UTC, so the machines' time zones don't change the results.
 
+</details>
+
 #### Derived metrics
+
+<div align="center">
 
 | Metric column | Definition | Meaning |
 | :--- | :--- | :--- |
@@ -178,12 +190,22 @@ Spark runs with `spark.sql.ansi.enabled=false` and `spark.sql.legacy.timeParserP
 | `delivery_status` | `ON_TIME` if the delay is 0, else `DELAYED` | |
 | `delay_category` | see below | |
 
+</div>
+
+<br>
+
+<div align="center">
+
 | `delay_min` | `delay_category` |
 | :--- | :--- |
 | `0` | `ON_TIME` |
 | more than 0, up to 15 | `SLIGHT_DELAY` |
 | more than 15, up to 30 | `MODERATE_DELAY` |
 | more than 30 | `SEVERE_DELAY` |
+
+</div>
+
+<br>
 
 Status and category use the unrounded delay, and speed uses the unrounded delivery time. The computed numbers are then rounded half-up to 2 decimal places. Job 1 writes a single file, `order_metrics.jsonl`: one JSON object per line holding the 14 input fields plus the 7 computed ones, sorted so a rerun produces the same file.
 
