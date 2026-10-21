@@ -33,7 +33,7 @@ A four-machine pipeline for the Big Data 2026 assignment <em>Distributed Food Or
 </div>
 
 > [!NOTE]
-> **Status.** Both Spark jobs are built and tested. The Kafka producer and consumer, the broker scripts, the per-machine stage scripts and the broker-failure check are in progress, so the Kafka stages below describe the design rather than finished code.
+> **Status.** Every stage is built and tested. The whole pipeline, including the broker-failure test, has passed a full rehearsal on one laptop with two local brokers (`bash scripts/local_e2e.sh --down`). The four-machine run over ZeroTier is next; [RUNBOOK.md](RUNBOOK.md) lists the demo commands in order.
 
 ---
 
@@ -225,7 +225,7 @@ These are the actual outputs from running Job 1 and then Job 2 directly on `data
 <a id="fault-tolerance"></a>
 ## Broker Failure Test
 
-With replication factor 2, every partition has a copy on both brokers. When VM3 stops, the controller on VM2 moves leadership of VM3's partitions to broker 1, and clients carry on through VM2. The test has not been run yet; this is the behaviour it is meant to show.
+With replication factor 2, every partition has a copy on both brokers. When VM3 stops, the controller on VM2 moves leadership of VM3's partitions to broker 1, and clients carry on through VM2. `scripts/broker_failure_check.sh` runs the test: it counts both topics, waits for VM3 to be stopped and for broker 2 to drop out of the in-sync set, then counts again. In the one-laptop rehearsal all 62 orders and 44 metrics were still readable with broker 2 stopped.
 
 ```mermaid
 sequenceDiagram
