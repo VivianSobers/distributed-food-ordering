@@ -61,4 +61,33 @@ Spark Job 1 applies these rules before enrichment:
 - **Status:** accept only the exact, case-sensitive value `DELIVERED`.
 - **Duplicates:** count records once when all 14 input field values match, regardless of JSON key order, formatting or extra fields. Keep two records with the same `order_id` when any input field differs: the team defines duplicates by the complete record, so an ID alone is insufficient to discard distinct content.
 
-For enrichment, negative delay is floored at zero. Delivery status and delay category use the unrounded delay in minutes: zero is `ON_TIME`; a positive delay is `DELAYED`, with categories `SLIGHT_DELAY` for `0 < d <= 15`, `MODERATE_DELAY` for `15 < d <= 30`, and `SEVERE_DELAY` for `d > 30`. Computed numeric metrics use half-up rounding to two decimal places; speed uses the unrounded delivery duration. Original timestamp strings are preserved in the output.
+## Metrics and outputs
+
+### Job 1: Order metrics
+
+Timestamp differences in the table are measured in minutes. Let `d` be the unrounded delay, floored at zero.
+
+| Metric | Formula or rule |
+| --- | --- |
+| `preparation_time_min` | `picked_up_timestamp - accepted_timestamp` |
+| `delivery_time_min` | `delivered_timestamp - picked_up_timestamp` |
+| `fulfillment_time_min` | `delivered_timestamp - order_timestamp` |
+| `delivery_speed_kmph` | `distance_km / (unrounded delivery_time_min / 60)` |
+| `delay_min` | `max(0, delivered_timestamp - expected_delivery_timestamp)` |
+| `delivery_status` | `ON_TIME` when `d = 0`; otherwise `DELAYED`. |
+| `delay_category` | `ON_TIME` when `d = 0`; `SLIGHT_DELAY` when `0 < d <= 15`; `MODERATE_DELAY` when `15 < d <= 30`; `SEVERE_DELAY` when `d > 30`. |
+
+Computed numeric metrics use half-up rounding to two decimal places. Speed uses the unrounded delivery duration; delivery status and delay category use the unrounded delay.
+
+`order_metrics.jsonl` contains one JSON object per line: the 14 input fields in schema order, followed by the seven metrics in the table's order. Original timestamp strings are preserved. Records are sorted ascending by all 14 input fields in schema order, starting with `order_id`, so differing records with the same ID also have a deterministic order.
+
+### Job 2: Summary CSVs
+
+Job 2 reads `order_metrics_landed.jsonl`, drops malformed records and exact duplicates across all 21 fields, and writes two CSVs with headers. Their columns, in order, are:
+
+- **`restaurant_summary.csv`**, sorted by `restaurant_id`: `restaurant_id, order_count, avg_order_amount, avg_preparation_time_min, avg_delivery_time_min, delayed_order_count, delay_rate_pct`.
+- **`city_summary.csv`**, sorted by `city`: `city, order_count, avg_order_amount, avg_delivery_time_min, delayed_order_count, delay_rate_pct`.
+
+Within each restaurant or city, `delayed_order_count` counts records whose `delivery_status` is `DELAYED`, and `delay_rate_pct = delayed_order_count / order_count * 100`. Averages and delay rates use half-up rounding to two decimal places; counts are integers.
+
+Each Spark output is one named file, rather than a directory of Spark part files.
