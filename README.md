@@ -260,37 +260,53 @@ sequenceDiagram
 ## Repository Layout
 
 <details>
-<summary><b>Expand tracked repository tree</b></summary>
+<summary><b>Expand repository tree</b></summary>
 <br>
 
 ```text
-.                                      # Repository root
-├── .gitignore                         # Generated and local file exclusions
-├── README.md                          # Project documentation
-├── data/                              # Input data
-│   └── order.jsonl                    # Assigned order dataset
-├── foodpipe/                          # Spark pipeline package
-│   ├── __init__.py                    # Package marker
-│   ├── io_utils.py                    # Single named JSONL and CSV file writer
-│   ├── job1_enrichment.py             # Order cleaning and enrichment job
-│   ├── job2_analytics.py              # Restaurant and city analytics job
-│   ├── schema.py                      # Field orders and Spark schemas
-│   └── spark_session.py               # Spark session configuration
-├── pytest.ini                         # Test discovery and import configuration
-├── requirements.txt                   # Python dependency constraints
-├── tests/                             # Automated tests
-│   ├── __init__.py                    # Test package marker
-│   ├── conftest.py                    # Shared Spark session fixture
-│   ├── test_io_utils.py               # Single-file output tests
-│   ├── test_job1_cleaning.py          # Order validation and deduplication tests
-│   ├── test_job1_metrics.py           # Enrichment and Job 1 CLI tests
-│   ├── test_job2_analytics.py         # Summaries and Job 2 CLI tests
-│   ├── test_reference.py              # Independent reference calculation tests
-│   ├── test_schema.py                 # Schema and column order tests
-│   └── test_spark_session.py          # Spark session settings tests
-└── verify/                            # Independent reference calculations
-    ├── __init__.py                    # Reference package marker
-    └── reference.py                   # Reference order metrics builder
+.
+├── README.md                    # This file
+├── RUNBOOK.md                   # Live demo commands, in order
+├── config/
+│   ├── cluster.env              # ZeroTier IPs, ports, cluster id, topic settings (real cluster)
+│   └── cluster.local.env        # Same keys for the one-laptop rehearsal (ports 19092-19094)
+├── data/
+│   └── order.jsonl              # Assigned order dataset
+├── docs/images/
+│   ├── architecture.py          # Draws the architecture diagram
+│   └── architecture-*.svg       # Light and dark versions of the diagram
+├── foodpipe/                    # Python package
+│   ├── config.py                # Reads config/*.env, builds the bootstrap server list
+│   ├── producer.py              # File -> topic (Producer 1 and Producer 2)
+│   ├── consumer.py              # Topic -> local file, stops when the topic goes quiet (Consumer 1 and 2)
+│   ├── job1_enrichment.py       # Spark Job 1: cleaning and order metrics
+│   ├── job2_analytics.py        # Spark Job 2: restaurant and city summaries
+│   ├── io_utils.py              # Writes one named JSONL or CSV file instead of a part-file folder
+│   ├── schema.py                # Field lists, Spark schemas, output column orders
+│   └── spark_session.py         # Spark session settings (UTC, parser policy)
+├── kafka/                       # Broker tooling (bash)
+│   ├── common.sh                # Shared settings and helpers sourced by every script
+│   ├── install_kafka.sh         # Downloads and verifies Kafka 3.9.2
+│   ├── server.properties.template
+│   ├── render_config.sh         # Template -> per-machine broker config
+│   ├── format_storage.sh        # Formats KRaft storage with the cluster id
+│   ├── start_broker.sh          # Starts vm2 or vm3 and waits for its port
+│   ├── stop_broker.sh           # Stops exactly one broker
+│   ├── create_topics.sh         # orders + order_metrics, 2 partitions, RF 2
+│   ├── reset_topics.sh          # Deletes and recreates both topics
+│   ├── describe_topics.sh       # Leaders, replicas and in-sync sets per partition
+│   └── local_cluster.sh         # Two brokers on one laptop for rehearsal
+├── scripts/                     # One script per machine and stage
+│   ├── vm1_stage1_produce.sh    # VM1: produce the dataset to orders
+│   ├── vm4_stage1.sh            # VM4: consume orders, Spark Job 1, produce order_metrics
+│   ├── vm1_stage2.sh            # VM1: consume order_metrics, Spark Job 2, print the tables
+│   ├── broker_failure_check.sh  # Counts both topics before and after VM3 stops
+│   └── local_e2e.sh             # Full pipeline rehearsal on one laptop
+├── tests/                       # pytest suite (Spark jobs, Kafka clients, shell scripts)
+├── verify/
+│   └── reference.py             # Plain-Python reference for the Job 1 metrics
+├── pytest.ini
+└── requirements.txt
 ```
 
 `output/` holds generated pipeline files and is ignored by Git.
