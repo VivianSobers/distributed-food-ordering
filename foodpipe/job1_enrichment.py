@@ -2,6 +2,7 @@ from pathlib import Path
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
 
+from foodpipe.io_utils import write_single_file
 from foodpipe.schema import (
     NUMERIC_FIELDS,
     ORDER_FIELDS,
@@ -91,3 +92,16 @@ def enrich_orders(clean: DataFrame) -> DataFrame:
 
 def build_order_metrics(spark: SparkSession, input_path: str | Path) -> DataFrame:
     return enrich_orders(clean_orders(load_raw_orders(spark, input_path)))
+
+
+def run(
+    spark: SparkSession, input_path: str | Path, output_path: str | Path
+) -> int:
+    raw = load_raw_orders(spark, input_path)
+    try:
+        metrics = enrich_orders(clean_orders(raw)).orderBy(*ORDER_FIELDS)
+        count = metrics.count()
+        write_single_file(metrics, output_path, "json")
+        return count
+    finally:
+        raw.unpersist()

@@ -1,7 +1,9 @@
+import json
+
 import pytest
 
-from foodpipe.job1_enrichment import build_order_metrics
-from foodpipe.schema import METRICS_FIELDS, NUMERIC_FIELDS, TIMESTAMP_FIELDS
+from foodpipe.job1_enrichment import build_order_metrics, run
+from foodpipe.schema import METRICS_FIELDS, NUMERIC_FIELDS, ORDER_FIELDS, TIMESTAMP_FIELDS
 from tests.test_job1_cleaning import BASE, rec
 
 
@@ -76,3 +78,32 @@ def test_delay_categories(spark, tmp_path, delivered, delay, status, category):
     assert row["delay_min"] == delay
     assert row["delivery_status"] == status
     assert row["delay_category"] == category
+
+
+def test_run_writes_single_jsonl(spark, tmp_path):
+    src = tmp_path / "orders_landed.jsonl"
+    src.write_text("\n".join([rec(order_id="T2"), rec(order_id="T1"), rec(status="CANCELLED")]) + "\n")
+    out = tmp_path / "out" / "order_metrics.jsonl"
+    assert run(spark, src, out) == 2
+    lines = out.read_text().splitlines()
+    assert [json.loads(line)["order_id"] for line in lines] == ["T1", "T2"]
+    assert list(json.loads(lines[0]).keys()) == METRICS_FIELDS
+    assert sorted(path.name for path in out.parent.iterdir()) == ["order_metrics.jsonl"]
+
+
+def test_run_orders_same_id_by_all_fields(spark, tmp_path):
+    records = [rec(order_amount=500.0), rec(order_amount=100.0)]
+    expected = sorted(
+        [json.loads(record) for record in records],
+        key=lambda record: tuple(record[field] for field in ORDER_FIELDS),
+    )
+    outputs = []
+    for index, lines in enumerate((records, records[::-1])):
+        src = tmp_path / f"orders_{index}.jsonl"
+        src.write_text("\n".join(lines) + "\n")
+        out = tmp_path / f"metrics_{index}.jsonl"
+        assert run(spark, src, out) == 2
+        outputs.append(out.read_bytes())
+        rows = [json.loads(line) for line in out.read_text().splitlines()]
+        assert [{field: row[field] for field in ORDER_FIELDS} for row in rows] == expected
+    assert outputs[0] == outputs[1]
