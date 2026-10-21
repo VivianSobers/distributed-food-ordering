@@ -1,0 +1,18 @@
+# Shared KRaft broker settings; the controller quorum is always node 1 on VM2.
+process.roles=@PROCESS_ROLES@
+node.id=@NODE_ID@
+controller.quorum.voters=@CONTROLLER_QUORUM_VOTERS@
+listeners=@LISTENERS@
+advertised.listeners=@ADVERTISED_LISTENERS@
+log.dirs=@LOG_DIRS@
+
+controller.listener.names=CONTROLLER
+inter.broker.listener.name=PLAINTEXT
+listener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+num.partitions=2
+default.replication.factor=2
+offsets.topic.replication.factor=2
+transaction.state.log.replication.factor=2
+transaction.state.log.min.isr=1
+min.insync.replicas=1
+auto.create.topics.enable=false

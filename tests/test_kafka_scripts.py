@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import re
 import subprocess
 
 import pytest
@@ -172,3 +173,31 @@ sha512_from_apache_file "$CHECKSUM_FILE"
 ''', CHECKSUM_FILE=path)
     assert result.returncode != 0
     assert "checksum" in result.stderr.lower()
+
+
+def test_broker_template_placeholders_and_fixed_properties():
+    template = (REPO_ROOT / "kafka/server.properties.template").read_text(encoding="utf-8")
+    placeholders = {
+        "process.roles": "@PROCESS_ROLES@",
+        "node.id": "@NODE_ID@",
+        "controller.quorum.voters": "@CONTROLLER_QUORUM_VOTERS@",
+        "listeners": "@LISTENERS@",
+        "advertised.listeners": "@ADVERTISED_LISTENERS@",
+        "log.dirs": "@LOG_DIRS@",
+    }
+    assert sorted(re.findall(r"@[A-Z_]+@", template)) == sorted(placeholders.values())
+    lines = [line for line in template.splitlines() if line and not line.startswith("#")]
+    expected = {
+        **placeholders,
+        "controller.listener.names": "CONTROLLER",
+        "inter.broker.listener.name": "PLAINTEXT",
+        "listener.security.protocol.map": "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT",
+        "num.partitions": "2",
+        "default.replication.factor": "2",
+        "offsets.topic.replication.factor": "2",
+        "transaction.state.log.replication.factor": "2",
+        "transaction.state.log.min.isr": "1",
+        "min.insync.replicas": "1",
+        "auto.create.topics.enable": "false",
+    }
+    assert sorted(lines) == sorted(f"{key}={value}" for key, value in expected.items())
