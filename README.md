@@ -1,4 +1,10 @@
+<div align="center">
+
 # Distributed Food Ordering & Analytics Pipeline
+
+<p>
+A four-machine pipeline for the Big Data 2026 assignment <em>Distributed Food Ordering System</em>. A two-broker <strong>Apache Kafka</strong> cluster in KRaft mode carries food-order records between the machines, which talk over a private <strong>ZeroTier</strong> network. <strong>Apache Spark</strong> batch jobs clean the orders, compute delivery metrics, and summarise performance by restaurant and by city.
+</p>
 
 ![Course](https://img.shields.io/badge/Course-Big%20Data%202026%20%7C%20UE24CS343AB2-1565C0?style=for-the-badge&labelColor=42A5F5)
 ![Streaming](https://img.shields.io/badge/Streaming-Apache%20Kafka%203.9.2%20KRaft-6A1B9A?style=for-the-badge&labelColor=AB47BC)
@@ -10,7 +16,21 @@
 ![Language](https://img.shields.io/badge/Language-Python%203.10-1C1C1C?style=for-the-badge&logo=python&logoColor=FFD700&labelColor=424242)
 ![Runtime](https://img.shields.io/badge/Runtime-Java%2011-00897B?style=for-the-badge&labelColor=26A69A)
 
-A four-machine pipeline for the Big Data 2026 assignment *Distributed Food Ordering System*. A two-broker **Apache Kafka** cluster in KRaft mode carries food-order records between the machines, which talk over a private **ZeroTier** network. **Apache Spark** batch jobs clean the orders, compute delivery metrics, and summarise performance by restaurant and by city.
+<p>
+  <a href="#overview">Overview</a> &bull;
+  <a href="#system-architecture">Architecture</a> &bull;
+  <a href="#cluster-topology">Topology</a> &bull;
+  <a href="#data-pipeline">Pipeline</a> &bull;
+  <a href="#analytics-preview">Outputs</a> &bull;
+  <a href="#fault-tolerance">Failure Test</a> &bull;
+  <a href="#repository-layout">Repository</a> &bull;
+  <a href="#getting-started">Getting Started</a> &bull;
+  <a href="#testing-verification">Testing</a> &bull;
+  <a href="#engineering-highlights">Decisions</a> &bull;
+  <a href="#team-members">Team</a>
+</p>
+
+</div>
 
 > [!NOTE]
 > **Status.** Both Spark jobs are built and tested. The Kafka producer and consumer, the broker scripts, the per-machine stage scripts and the broker-failure check are in progress, so the Kafka stages below describe the design rather than finished code.
