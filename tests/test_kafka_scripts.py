@@ -498,3 +498,69 @@ def test_stop_broker_terminates_only_exact_config(stop_sandbox, other_config):
             if process.poll() is None:
                 process.kill()
             process.wait()
+
+
+@pytest.fixture
+def topic_stubs(tmp_path):
+    kafka_home = tmp_path / "fake kafka"
+    bin_dir = kafka_home / "bin"
+    bin_dir.mkdir(parents=True)
+    scripts = {
+        "kafka-broker-api-versions.sh": (
+            'printf \'%s\\n\' "$@" > "$BROKER_ARGS"\n'
+            'cat "$BROKER_OUTPUT"\nexit "${BROKER_STATUS:-0}"\n'
+        ),
+        "kafka-topics.sh": 'printf \'%s\\n\' "$@" >> "$TOPIC_ARGS"\n',
+    }
+    for name, body in scripts.items():
+        path = bin_dir / name
+        path.write_text("#!/bin/bash\nset -euo pipefail\n" + body)
+        path.chmod(0o755)
+    return {
+        "KAFKA_HOME": kafka_home, "BROKER_ARGS": tmp_path / "broker args",
+        "BROKER_OUTPUT": tmp_path / "broker output", "TOPIC_ARGS": tmp_path / "topic args",
+    }
+
+
+def test_create_topics_bash_syntax():
+    result = subprocess.run(
+        ["bash", "-n", str(REPO_ROOT / "kafka/create_topics.sh")],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_create_topics_exact_commands(tmp_path, topic_stubs):
+    topic_stubs["BROKER_OUTPUT"].write_text(
+        "127.0.0.1:19092 (id: 1 rack: null) -> (\n\tProduce(0): 0 to 11 [usable: 11],\n)\n"
+        "127.0.0.1:19094 (id: 2 rack: null) -> (\n\tFetch(1): 0 to 17 [usable: 17]\n)\n"
+    )
+    result = run_common(tmp_path, 'bash "$REPO_ROOT/kafka/create_topics.sh"', **topic_stubs)
+    assert result.returncode == 0, result.stderr
+    bootstrap = "127.0.0.1:19092,127.0.0.1:19094"
+    assert topic_stubs["BROKER_ARGS"].read_text().splitlines() == ["--bootstrap-server", bootstrap]
+    assert topic_stubs["TOPIC_ARGS"].read_text().splitlines() == [
+        "--bootstrap-server", bootstrap, "--create", "--if-not-exists", "--topic", "orders",
+        "--partitions", "2", "--replication-factor", "2",
+        "--bootstrap-server", bootstrap, "--create", "--if-not-exists", "--topic", "order_metrics",
+        "--partitions", "2", "--replication-factor", "2",
+    ]
+    assert result.stdout.splitlines() == ["Created topic orders", "Created topic order_metrics"]
+
+
+@pytest.mark.parametrize("output, status, count", [
+    ("localhost:19092 (id: 1 rack: null) -> (\n)\n", "0", 1),
+    ("localhost:19094 (id: 2 rack: null) -> (\n)\n", "0", 1),
+    ("localhost:19092 (id: 1 rack: null) -> (\n)\n" * 2, "0", 1),
+    ("localhost:19092 (id: 1 rack: null) -> (\n)\n"
+     "localhost:19094 (id: 2 rack: null) -> ERROR: Connection refused\n", "0", 1),
+    ("", "1", 0),
+])
+def test_create_topics_refuses_missing_brokers(tmp_path, topic_stubs, output, status, count):
+    topic_stubs["BROKER_OUTPUT"].write_text(output)
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/create_topics.sh"', BROKER_STATUS=status, **topic_stubs,
+    )
+    assert result.returncode != 0
+    assert f"Only {count} of 2 brokers are up; start VM3 first" in result.stderr
+    assert not topic_stubs["TOPIC_ARGS"].exists()
