@@ -231,3 +231,18 @@ def test_vm1_analytics_stops_on_failed_step(tmp_path, analytics_sandbox, module,
     assert len(Path(env["PYTHON_ARGS"]).read_text().splitlines()) == call_count
     assert "Restaurant summary" not in result.stdout
     assert "City summary" not in result.stdout
+
+
+def test_local_e2e_bash_syntax():
+    result = subprocess.run(["bash", "-n", str(REPO_ROOT / "scripts/local_e2e.sh")],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("arguments", [["--unknown"], ["--down", "extra"]])
+def test_local_e2e_rejects_invalid_arguments(tmp_path, python_stub, arguments):
+    result = subprocess.run(["bash", str(REPO_ROOT / "scripts/local_e2e.sh"), *arguments],
+                            cwd=tmp_path, env=python_stub, capture_output=True, text=True, timeout=10)
+    assert result.returncode != 0
+    assert "Usage:" in result.stderr
+    assert not Path(python_stub["PYTHON_ARGS"]).exists()
