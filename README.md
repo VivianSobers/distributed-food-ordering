@@ -420,8 +420,8 @@ The tests cover every cleaning rule, including each required field, bad and miso
 
 | Member | GitHub | Role | Node |
 | :--- | :---: | :--- | :---: |
-| **Vivian** | [@VivianSobers](https://github.com/VivianSobers) | KRaft controller & Kafka broker 1 | **VM2** |
 | **Dhriti** | [@DHRITIRAJESH](https://github.com/DHRITIRAJESH) | Producer 1, Consumer 2 & Spark Job 2 | **VM1** |
+| **Vivian** | [@VivianSobers](https://github.com/VivianSobers) | KRaft controller & Kafka broker 1 | **VM2** |
 | **Dhanya** | [@DhanyaSPrasad](https://github.com/DhanyaSPrasad) | Kafka broker 2 & failure test | **VM3** |
 | **Navya** | [@nav-yeah](https://github.com/nav-yeah) | Consumer 1, Spark Job 1 & Producer 2 | **VM4** |
 
