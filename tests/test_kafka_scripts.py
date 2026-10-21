@@ -666,3 +666,69 @@ def test_reset_topics_does_not_ignore_other_delete_errors(tmp_path, reset_stubs)
     assert result.returncode != 0
     assert "Permission denied" in result.stderr
     assert not reset_stubs["LIST_COUNT"].exists()
+
+
+def test_describe_topics_bash_syntax():
+    result = subprocess.run(
+        ["bash", "-n", str(REPO_ROOT / "kafka/describe_topics.sh")],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("state", ["healthy", "vm3-down", "mixed"])
+def test_describe_topics_summaries_and_warnings(tmp_path, topic_stubs, state):
+    fixtures = tmp_path / "describe output"
+    fixtures.mkdir()
+    for topic in ("orders", "order_metrics"):
+        rows = [f"Topic: {topic}\tTopicId: A4mCq1UKQFqxk7x2Q1qwKg\tPartitionCount: 2\t"
+                "ReplicationFactor: 2\tConfigs: min.insync.replicas=1"]
+        for partition in (0, 1):
+            degraded = state == "vm3-down" or (state == "mixed" and partition == 1)
+            rows.append(
+                f"\tTopic: {topic}\tPartition: {partition}\tLeader: {1 if degraded else partition + 1}"
+                f"\tReplicas: {'2,1' if degraded else '1,2'}\tIsr: {'1' if degraded else '1,2'}"
+            )
+        (fixtures / topic).write_text("\n".join(rows) + "\n")
+    script = topic_stubs["KAFKA_HOME"] / "bin/kafka-topics.sh"
+    script.write_text(r'''#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$@" >> "$TOPIC_ARGS"
+while (( $# )); do
+    if [[ "$1" == --topic ]]; then
+        cat "$DESCRIBE_FIXTURES/$2"
+        exit 0
+    fi
+    shift
+done
+exit 1
+''')
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/describe_topics.sh"',
+        DESCRIBE_FIXTURES=fixtures, **topic_stubs,
+    )
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    assert "127.0.0.1:19092,127.0.0.1:19094" in lines[0]
+    assert re.search(r"\d{4}-\d{2}-\d{2}.*\d{2}:\d{2}:\d{2}", lines[0])
+    for topic in ("orders", "order_metrics"):
+        assert (fixtures / topic).read_text().strip() in result.stdout
+        for partition in (0, 1):
+            degraded = state == "vm3-down" or (state == "mixed" and partition == 1)
+            assert (
+                f"{topic} p{partition}: leader {1 if degraded else partition + 1}, "
+                f"replicas {'2,1' if degraded else '1,2'}, in sync {'1' if degraded else '1,2'}"
+            ) in lines
+    warnings = [line for line in lines if line.startswith("WARNING:")]
+    expected_warnings = [
+        f"WARNING: {topic} p{partition}: 1 of 2 replicas in sync"
+        for topic in ("orders", "order_metrics") for partition in (0, 1)
+        if state == "vm3-down" or (state == "mixed" and partition == 1)
+    ]
+    assert warnings == expected_warnings
+    if warnings:
+        assert lines[-len(warnings):] == warnings
+    assert topic_stubs["TOPIC_ARGS"].read_text().splitlines() == [
+        "--bootstrap-server", "127.0.0.1:19092,127.0.0.1:19094", "--describe", "--topic", "orders",
+        "--bootstrap-server", "127.0.0.1:19092,127.0.0.1:19094", "--describe", "--topic", "order_metrics",
+    ]
