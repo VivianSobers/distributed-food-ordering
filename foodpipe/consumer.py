@@ -11,11 +11,12 @@ from foodpipe.config import bootstrap_servers, load_env
 
 
 def consume_to_file(consumer, out_path, idle_timeout, max_wait, clock=time.monotonic) -> dict[int, int]:
-    """Write messages until an empty poll after data or the initial wait expires."""
+    """Write messages until the idle timeout or the initial wait expires."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     counts = {}
     started = clock()
+    last_message = None
     with out_path.open("wb") as output:
         while True:
             batches = consumer.poll(timeout_ms=1000)
@@ -25,9 +26,14 @@ def consume_to_file(consumer, out_path, idle_timeout, max_wait, clock=time.monot
                     output.write(message.value + b"\n")
                     output.flush()
                     counts[message.partition] = counts.get(message.partition, 0) + 1
+                    last_message = clock()
                     received = True
-            if not received and (counts or clock() - started >= max_wait):
-                break
+            if not received:
+                if last_message is None:
+                    if clock() - started >= max_wait:
+                        break
+                elif clock() - last_message >= idle_timeout:
+                    break
     return counts
 
 

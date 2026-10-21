@@ -52,7 +52,7 @@ def test_consume_to_file_preserves_values_and_counts(tmp_path, existing_file):
         {},
     ], clock)
 
-    assert consume_to_file(consumer, path, 15, 300, clock=clock) == {0: 2, 1: 2}
+    assert consume_to_file(consumer, path, 1, 300, clock=clock) == {0: 2, 1: 2}
     assert path.read_bytes() == b' {"id": 1}  \nmalformed\xff\n\nraw\r\n\n'
     assert consumer.poll_timeouts == [1000] * 4
 
@@ -67,6 +67,49 @@ def test_consume_to_file_max_wait_without_records(tmp_path):
     assert clock.now == 3
     assert consumer.poll_timeouts == [1000] * 3
     assert path.read_bytes() == b""
+
+
+def test_consume_to_file_empty_poll_between_partitions_keeps_waiting(tmp_path):
+    path = tmp_path / "landed.jsonl"
+    clock = FakeClock()
+    consumer = FakeConsumer([
+        {0: [SimpleNamespace(partition=0, value=b"first")]}, {},
+        {1: [SimpleNamespace(partition=1, value=b"second")]}, {}, {}, {},
+    ], clock)
+
+    assert consume_to_file(consumer, path, 3, 2, clock=clock) == {0: 1, 1: 1}
+    assert path.read_bytes() == b"first\nsecond\n"
+    assert clock.now == 6
+    assert consumer.poll_timeouts == [1000] * 6
+
+
+@pytest.mark.parametrize("idle_timeout", [1, 3, 5])
+def test_consume_to_file_stops_at_idle_timeout_after_last_message(tmp_path, idle_timeout):
+    clock = FakeClock()
+    consumer = FakeConsumer([
+        {0: [SimpleNamespace(partition=0, value=b"record")]},
+        *[{} for _ in range(idle_timeout)],
+    ], clock)
+
+    assert consume_to_file(
+        consumer, tmp_path / "landed.jsonl", idle_timeout, 300, clock=clock,
+    ) == {0: 1}
+    assert clock.now == 1 + idle_timeout
+    assert consumer.poll_timeouts == [1000] * (1 + idle_timeout)
+
+
+def test_consume_to_file_message_before_idle_timeout_resets_timer(tmp_path):
+    path = tmp_path / "landed.jsonl"
+    clock = FakeClock()
+    consumer = FakeConsumer([
+        {0: [SimpleNamespace(partition=0, value=b"first")]}, {}, {},
+        {0: [SimpleNamespace(partition=0, value=b"last")]}, {}, {}, {}, {},
+    ], clock)
+
+    assert consume_to_file(consumer, path, 4, 300, clock=clock) == {0: 2}
+    assert path.read_bytes() == b"first\nlast\n"
+    assert clock.now == 8
+    assert consumer.poll_timeouts == [1000] * 8
 
 
 @pytest.mark.parametrize("explicit_bootstrap", [False, True])
@@ -84,7 +127,8 @@ def test_consumer_cli_prints_counts_and_closes(tmp_path, monkeypatch, capsys, ex
 
     monkeypatch.setattr("foodpipe.consumer.KafkaConsumer", create_consumer)
     monkeypatch.setenv("FOODPIPE_ENV", "cluster.local")
-    args = ["--topic", "orders", "--out", str(path), "--group", "vm4-test"]
+    args = ["--topic", "orders", "--out", str(path), "--group", "vm4-test",
+            "--idle-timeout", "0"]
     if explicit_bootstrap:
         monkeypatch.setenv("FOODPIPE_ENV", "missing-test")
         args += ["--bootstrap", "broker:1234"]
