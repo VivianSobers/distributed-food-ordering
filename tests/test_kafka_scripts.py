@@ -80,7 +80,7 @@ def test_common_resolves_data_root_and_honours_kafka_home(tmp_path, data_root):
 
 
 @pytest.mark.parametrize("script, succeeds, message", [
-    ("require_ip VM1_IP", False, "CHANGE_ME"),
+    ("VM1_IP=CHANGE_ME; require_ip VM1_IP", False, "CHANGE_ME"),
     ("require_ip VM2_IP", True, ""),
     ("VM2_IP=; require_ip VM2_IP", False, "VM2_IP"),
     ("unset VM2_IP; require_ip VM2_IP", False, "VM2_IP"),
