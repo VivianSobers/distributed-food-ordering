@@ -37,3 +37,35 @@ On Linux the ZeroTier interface for this network is called `ztbpajn2rk` on every
 | Ubuntu (ufw) | Only if `sudo ufw status` says active: `sudo ufw allow in on ztbpajn2rk` |
 
 The `zt+` wildcard does not work with firewalld; use the exact interface name. Brokers listen on port 9092 and the controller on VM2 on port 9093.
+
+## 3. Software and broker setup (once)
+
+Every machine:
+
+```bash
+git clone https://github.com/VivianSobers/distributed-food-ordering.git
+cd distributed-food-ordering
+python3.10 -m venv .venv && .venv/bin/pip install -r requirements.txt
+java -version     # must be 11; otherwise: export JAVA_HOME=/path/to/jdk-11
+```
+
+VM2 and VM3 only:
+
+```bash
+bash kafka/install_kafka.sh          # Kafka 3.9.2 into ~/kafka_2.12-3.9.2, checksum verified
+bash kafka/format_storage.sh vm2     # on VM2 (use vm3 on VM3)
+bash kafka/start_broker.sh vm2       # on VM2 (use vm3 on VM3)
+```
+
+`format_storage.sh` stamps the data folder with the cluster ID from `config/cluster.env`. It is safe to run again: it reports "already formatted" and leaves existing data alone. Start VM2 before VM3, because broker 2 registers with the controller on VM2.
+
+Once both brokers are up, create the topics from any machine:
+
+```bash
+bash kafka/create_topics.sh          # orders + order_metrics, 2 partitions, RF 2
+bash kafka/describe_topics.sh        # every partition should show "in sync 1,2"
+```
+
+`create_topics.sh` refuses with "Only 1 of 2 brokers are up" until VM3 has joined, since replication factor 2 needs both brokers.
+
+To rehearse the whole pipeline on one laptop without the other machines, run `bash scripts/local_e2e.sh --down`. It starts two brokers on ports 19092 to 19094, runs every stage, checks the outputs, stops broker 2, and prints `E2E OK` when everything passes.
