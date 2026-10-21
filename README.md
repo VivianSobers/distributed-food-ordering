@@ -1,10 +1,14 @@
 # 🍽️ Distributed Food Ordering & Analytics Pipeline
 
-[![Course](https://img.shields.io/badge/Course-Big%20Data%202026%20%7C%20UE24CS343AB2-0052CC?style=for-the-badge)](https://big-data-2026-supersite.super.site/distributed-food-ordering-system)
-[![Python](https://img.shields.io/badge/Python-3.10-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![Apache Spark](https://img.shields.io/badge/Apache%20Spark-3.3.4-E25A1C?style=for-the-badge&logo=apachespark&logoColor=white)](https://spark.apache.org/)
-[![Apache Kafka](https://img.shields.io/badge/Apache%20Kafka-3.9.2%20(KRaft)-231F20?style=for-the-badge&logo=apachekafka&logoColor=white)](https://kafka.apache.org/)
-[![ZeroTier](https://img.shields.io/badge/ZeroTier-private%20network-FFA500?style=for-the-badge&logo=zerotier&logoColor=white)](https://www.zerotier.com/)
+![Course](https://img.shields.io/badge/Course-Big%20Data%202026%20%7C%20UE24CS343AB2-1565C0?style=for-the-badge&labelColor=42A5F5)
+![Streaming](https://img.shields.io/badge/Streaming-Apache%20Kafka%203.9.2%20KRaft-6A1B9A?style=for-the-badge&labelColor=AB47BC)
+![Processing](https://img.shields.io/badge/Processing-Apache%20Spark%203.3.4-E65100?style=for-the-badge&labelColor=FF9800)
+![Network](https://img.shields.io/badge/Network-ZeroTier%20Private%20LAN-B8860B?style=for-the-badge&labelColor=FFD54F)
+![Replication](https://img.shields.io/badge/Replication-RF%202%20%C2%B7%202%20Partitions-2E7D32?style=for-the-badge&labelColor=66BB6A)
+![Failure Test](https://img.shields.io/badge/Failure%20Test-Broker%202%20Shutdown-B71C1C?style=for-the-badge&labelColor=EF5350)
+![Cluster](https://img.shields.io/badge/Cluster-4%20Machines-512DA8?style=for-the-badge&labelColor=9575CD)
+![Language](https://img.shields.io/badge/Language-Python%203.10-1C1C1C?style=for-the-badge&logo=python&logoColor=FFD700&labelColor=424242)
+![Runtime](https://img.shields.io/badge/Runtime-Java%2011-00897B?style=for-the-badge&labelColor=26A69A)
 
 A four-machine pipeline for the Big Data 2026 assignment *Distributed Food Ordering System*. A two-broker **Apache Kafka** cluster in KRaft mode carries food-order records between the machines, which talk over a private **ZeroTier** network. **Apache Spark** batch jobs clean the orders, compute delivery metrics, and summarise performance by restaurant and by city.
 
