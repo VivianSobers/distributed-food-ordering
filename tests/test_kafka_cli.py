@@ -4,7 +4,130 @@ from types import SimpleNamespace
 import pytest
 
 from foodpipe.config import _parse_env, bootstrap_servers, load_env
+from foodpipe.consumer import consume_to_file, main as consumer_main
 from foodpipe.producer import main as producer_main, produce_file
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0
+
+    def __call__(self):
+        return self.now
+
+
+class FakeConsumer:
+    def __init__(self, batches, clock=None):
+        self.batches = iter(batches)
+        self.clock = clock
+        self.poll_timeouts = []
+        self.closed = False
+
+    def poll(self, timeout_ms):
+        self.poll_timeouts.append(timeout_ms)
+        if self.clock is not None:
+            self.clock.now += timeout_ms / 1000
+        batch = next(self.batches)
+        if isinstance(batch, Exception):
+            raise batch
+        return batch
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.mark.parametrize("existing_file", [False, True])
+def test_consume_to_file_preserves_values_and_counts(tmp_path, existing_file):
+    path = tmp_path / "nested" / "landed.jsonl"
+    if existing_file:
+        path.parent.mkdir()
+        path.write_bytes(b"old contents that must be truncated\n" * 10)
+    clock = FakeClock()
+    consumer = FakeConsumer([
+        {},
+        {1: [SimpleNamespace(partition=1, value=b' {"id": 1}  '),
+             SimpleNamespace(partition=1, value=b"malformed\xff")]},
+        {0: [SimpleNamespace(partition=0, value=b""),
+             SimpleNamespace(partition=0, value=b"raw\r\n")]},
+        {},
+    ], clock)
+
+    assert consume_to_file(consumer, path, 15, 300, clock=clock) == {0: 2, 1: 2}
+    assert path.read_bytes() == b' {"id": 1}  \nmalformed\xff\n\nraw\r\n\n'
+    assert consumer.poll_timeouts == [1000] * 4
+
+
+def test_consume_to_file_max_wait_without_records(tmp_path):
+    path = tmp_path / "landed.jsonl"
+    path.write_bytes(b"stale data")
+    clock = FakeClock()
+    consumer = FakeConsumer([{}, {}, {}], clock)
+
+    assert consume_to_file(consumer, path, 15, 3, clock=clock) == {}
+    assert clock.now == 3
+    assert consumer.poll_timeouts == [1000] * 3
+    assert path.read_bytes() == b""
+
+
+@pytest.mark.parametrize("explicit_bootstrap", [False, True])
+def test_consumer_cli_prints_counts_and_closes(tmp_path, monkeypatch, capsys, explicit_bootstrap):
+    path = tmp_path / "landed.jsonl"
+    consumer = FakeConsumer([
+        {1: [SimpleNamespace(partition=1, value=b"first")],
+         0: [SimpleNamespace(partition=0, value=b"second")]}, {},
+    ])
+    options = {}
+
+    def create_consumer(topic, **kwargs):
+        options.update(topic=topic, **kwargs)
+        return consumer
+
+    monkeypatch.setattr("foodpipe.consumer.KafkaConsumer", create_consumer)
+    monkeypatch.setenv("FOODPIPE_ENV", "cluster.local")
+    args = ["--topic", "orders", "--out", str(path), "--group", "vm4-test"]
+    if explicit_bootstrap:
+        monkeypatch.setenv("FOODPIPE_ENV", "missing-test")
+        args += ["--bootstrap", "broker:1234"]
+
+    assert consumer_main(args) == 0
+    assert options == {
+        "topic": "orders", "group_id": "vm4-test", "auto_offset_reset": "earliest",
+        "enable_auto_commit": True,
+        "bootstrap_servers": "broker:1234" if explicit_bootstrap else (
+            "127.0.0.1:19092,127.0.0.1:19094"
+        ),
+    }
+    assert path.read_bytes() == b"first\nsecond\n"
+    assert consumer.closed
+    assert capsys.readouterr().out.splitlines() == [
+        f"Consumed 2 records from orders -> {path}", "partition 0: 1", "partition 1: 1",
+    ]
+
+
+def test_consumer_cli_no_records_exits_one_and_closes(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "landed.jsonl"
+    consumer = FakeConsumer([{}])
+    monkeypatch.setattr("foodpipe.consumer.KafkaConsumer", lambda *args, **kwargs: consumer)
+    assert consumer_main([
+        "--topic", "orders", "--out", str(path), "--group", "empty-test",
+        "--bootstrap", "broker:1234", "--max-wait", "0", "--idle-timeout", "2",
+    ]) == 1
+    assert consumer.closed
+    assert path.read_bytes() == b""
+    assert capsys.readouterr().out == f"Consumed 0 records from orders -> {path}\n"
+
+
+def test_consumer_cli_poll_failure_exits_one_and_closes(tmp_path, monkeypatch, capsys):
+    consumer = FakeConsumer([RuntimeError("poll failed")])
+    monkeypatch.setattr("foodpipe.consumer.KafkaConsumer", lambda *args, **kwargs: consumer)
+    assert consumer_main([
+        "--topic", "orders", "--out", str(tmp_path / "landed.jsonl"),
+        "--group", "failure-test", "--bootstrap", "broker:1234",
+    ]) == 1
+    assert consumer.closed
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "poll failed" in captured.err
 
 
 class FakeFuture:
