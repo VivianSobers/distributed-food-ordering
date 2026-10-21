@@ -39,17 +39,13 @@ A four-machine pipeline for the Big Data 2026 assignment <em>Distributed Food Or
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [System Architecture](#system-architecture)
-- [Cluster Topology & Node Roles](#cluster-topology)
-- [Data Pipeline & Business Logic](#data-pipeline)
-- [Analytics Output Preview](#analytics-preview)
-- [Broker Failure Test](#fault-tolerance)
-- [Repository Layout](#repository-layout)
-- [Getting Started](#getting-started)
-- [Testing](#testing-verification)
-- [Design Decisions](#engineering-highlights)
-- [Team Members](#team-members)
+<div align="center">
+
+| Architecture & Dataflow | Operations & Reference |
+| :--- | :--- |
+| • [Overview](#overview)<br>• [System Architecture](#system-architecture)<br>• [Cluster Topology & Node Roles](#cluster-topology)<br>• [Data Pipeline & Business Logic](#data-pipeline)<br>• [Analytics Output Preview](#analytics-preview) | • [Broker Failure Test](#fault-tolerance)<br>• [Repository Layout](#repository-layout)<br>• [Getting Started](#getting-started)<br>• [Testing](#testing-verification)<br>• [Design Decisions](#engineering-highlights)<br>• [Team Members](#team-members) |
+
+</div>
 
 ---
 
