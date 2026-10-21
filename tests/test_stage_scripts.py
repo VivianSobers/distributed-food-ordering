@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STAGE = REPO_ROOT / "scripts/vm1_stage1_produce.sh"
 VM4_STAGE = REPO_ROOT / "scripts/vm4_stage1.sh"
+VM1_ANALYTICS = REPO_ROOT / "scripts/vm1_stage2.sh"
 
 
 @pytest.fixture
@@ -142,3 +144,90 @@ def test_vm4_enrichment_stage_missing_python_has_setup_hint(tmp_path, pipeline_p
     assert result.returncode != 0
     assert "python3.10 -m venv .venv" in result.stderr
     assert not Path(env["PYTHON_ARGS"]).exists()
+
+
+@pytest.fixture
+def analytics_sandbox(tmp_path, pipeline_python_stub):
+    root = tmp_path / "analytics repo"
+    for directory in ("scripts", "kafka", "config"):
+        (root / directory).mkdir(parents=True)
+    shutil.copyfile(VM1_ANALYTICS, root / "scripts/vm1_stage2.sh")
+    shutil.copyfile(REPO_ROOT / "kafka/common.sh", root / "kafka/common.sh")
+    for profile in ("cluster", "cluster.local"):
+        shutil.copyfile(REPO_ROOT / "config" / f"{profile}.env", root / "config" / f"{profile}.env")
+    interpreter = Path(pipeline_python_stub["FOODPIPE_PYTHON"])
+    with interpreter.open("a") as stub:
+        stub.write(r'''
+if [[ "$2" == foodpipe.job2_analytics ]]; then
+    mkdir -p output
+    printf 'restaurant_id,order_count\nR1,2\n' > output/restaurant_summary.csv
+    printf 'city,order_count\nDelhi,2\n' > output/city_summary.csv
+    printf 'Job 2 finished\n'
+fi
+''')
+    tools = tmp_path / "display tools"
+    tools.mkdir()
+    for command in ("bash", "dirname", "date", "cat", "mkdir"):
+        (tools / command).symlink_to(shutil.which(command))
+    pipeline_python_stub["PATH"] = str(tools)
+    pipeline_python_stub["COLUMN_ARGS"] = str(tmp_path / "column args")
+    return root, pipeline_python_stub, tools
+
+
+def test_vm1_analytics_stage_bash_syntax():
+    result = subprocess.run(["bash", "-n", str(VM1_ANALYTICS)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("with_column", [False, True])
+def test_vm1_analytics_commands_and_csv_display(tmp_path, analytics_sandbox, with_column):
+    root, env, tools = analytics_sandbox
+    env["FOODPIPE_ENV"] = "cluster.local" if with_column else "cluster"
+    bootstrap = "127.0.0.1:19092,127.0.0.1:19094" if with_column else (
+        "192.168.193.217:9092,192.168.193.247:9092"
+    )
+    if with_column:
+        env.update(FOODPIPE_IDLE_TIMEOUT="7", FOODPIPE_MAX_WAIT="23")
+        column = tools / "column"
+        column.write_text(
+            '#!/bin/bash\nprintf \'%s\\n\' "$@" >> "$COLUMN_ARGS"\ncat "$3"\n'
+        )
+        column.chmod(0o755)
+    result = subprocess.run(["/bin/bash", str(root / "scripts/vm1_stage2.sh")], cwd=tmp_path,
+                            env=env, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    calls = [line.rstrip("\t").split("\t") for line in Path(env["PYTHON_ARGS"]).read_text().splitlines()]
+    group = calls[0][7]
+    assert re.fullmatch(r"vm1-metrics-\d+", group)
+    assert calls == [
+        ["-m", "foodpipe.consumer", "--topic", "order_metrics", "--out", "output/order_metrics_landed.jsonl",
+         "--group", group, "--bootstrap", bootstrap, "--idle-timeout", "7" if with_column else "15",
+         "--max-wait", "23" if with_column else "300"],
+        ["-m", "foodpipe.job2_analytics", "--input", "output/order_metrics_landed.jsonl",
+         "--restaurant-out", "output/restaurant_summary.csv", "--city-out", "output/city_summary.csv"],
+    ]
+    assert Path(env["PYTHON_CWD"]).read_text().splitlines() == [str(root)] * 2
+    output = result.stdout
+    assert output.index("Job 2 finished") < output.index("Restaurant summary") < output.index("R1,2")
+    assert output.index("R1,2") < output.index("City summary") < output.index("Delhi,2")
+    assert "restaurant_id,order_count\nR1,2" in output
+    assert "city,order_count\nDelhi,2" in output
+    if with_column:
+        assert Path(env["COLUMN_ARGS"]).read_text().splitlines() == [
+            "-s,", "-t", "output/restaurant_summary.csv", "-s,", "-t", "output/city_summary.csv",
+        ]
+
+
+@pytest.mark.parametrize("module, step, call_count", [
+    ("foodpipe.consumer", "consumer", 1), ("foodpipe.job2_analytics", "Job 2", 2),
+])
+def test_vm1_analytics_stops_on_failed_step(tmp_path, analytics_sandbox, module, step, call_count):
+    root, env, _ = analytics_sandbox
+    env.update(FOODPIPE_ENV="cluster.local", FAIL_MODULE=module)
+    result = subprocess.run(["/bin/bash", str(root / "scripts/vm1_stage2.sh")], cwd=tmp_path,
+                            env=env, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 7
+    assert step in result.stderr and "failed" in result.stderr
+    assert len(Path(env["PYTHON_ARGS"]).read_text().splitlines()) == call_count
+    assert "Restaurant summary" not in result.stdout
+    assert "City summary" not in result.stdout
