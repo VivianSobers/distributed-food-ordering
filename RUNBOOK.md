@@ -69,3 +69,27 @@ bash kafka/describe_topics.sh        # every partition should show "in sync 1,2"
 `create_topics.sh` refuses with "Only 1 of 2 brokers are up" until VM3 has joined, since replication factor 2 needs both brokers.
 
 To rehearse the whole pipeline on one laptop without the other machines, run `bash scripts/local_e2e.sh --down`. It starts two brokers on ports 19092 to 19094, runs every stage, checks the outputs, stops broker 2, and prints `E2E OK` when everything passes.
+
+## 4. Demo order
+
+Run `git pull` on every machine first.
+
+| Step | Where | Command | What the examiner sees |
+| --- | --- | --- | --- |
+| 1 | VM2 | `bash kafka/start_broker.sh vm2` | `vm2 broker up on port 9092` |
+| 2 | VM3 | `bash kafka/start_broker.sh vm3` | `vm3 broker up on port 9092` |
+| 3 | any | `bash kafka/reset_topics.sh` | Fresh `orders` and `order_metrics` topics |
+| 4 | any | `bash kafka/describe_topics.sh` | 2 partitions per topic, replicas on both brokers, all in sync |
+| 5 | VM4 | `bash scripts/vm4_stage1.sh` | Consumer 1 waits for orders (up to 5 minutes) |
+| 6 | VM1 | `bash scripts/vm1_stage1_produce.sh` | 62 records produced, split across partitions 0 and 1 |
+| 7 | VM4 | (continues by itself) | 62 consumed, Spark Job 1 writes 44 metrics, Producer 2 sends them |
+| 8 | VM1 | `bash scripts/vm1_stage2.sh` | 44 consumed, Spark Job 2 prints the restaurant and city tables |
+| 9 | VM1 or VM4 | `bash scripts/broker_failure_check.sh` | Counts both topics, then asks for VM3 to be stopped |
+| 10 | VM3 | `bash kafka/stop_broker.sh vm3`, then press Enter on the step 9 machine | Every partition moves to broker 1; the check prints `PASS` for both topics |
+| 11 | VM3 | `bash kafka/start_broker.sh vm3` | Broker 2 rejoins and catches up |
+
+Steps 5 and 6 can run in either order; the VM4 consumer waits up to 5 minutes for data (`FOODPIPE_MAX_WAIT` changes that) and stops once the topic has been quiet for 15 seconds (`FOODPIPE_IDLE_TIMEOUT`).
+
+To show that the pipeline keeps working with only one broker, repeat steps 5 to 8 while VM3 is still stopped, before step 11.
+
+Each stage overwrites its files in `output/`, so a rerun starts clean. Running step 3 again empties the topics; if you skip it and produce again, the topic holds every record twice, and both Spark jobs still give the same results because they count exact duplicates once.
