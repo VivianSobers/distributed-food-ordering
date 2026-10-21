@@ -7,6 +7,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMMON = REPO_ROOT / "kafka" / "common.sh"
+INSTALL = REPO_ROOT / "kafka" / "install_kafka.sh"
 
 
 def run_common(tmp_path, script, profile="cluster.local", **overrides):
@@ -121,3 +122,53 @@ def test_common_java_from_path_without_java_home(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "java"
+
+
+def test_install_bash_syntax():
+    result = subprocess.run(["bash", "-n", str(INSTALL)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_install_already_installed_skips_download(tmp_path):
+    kafka_home = tmp_path / "kafka home"
+    start = kafka_home / "bin" / "kafka-server-start.sh"
+    start.parent.mkdir(parents=True)
+    start.touch()
+    curl = tmp_path / "curl"
+    curl.write_text('#!/bin/sh\ntouch "$DOWNLOAD_MARKER"\nexit 99\n')
+    curl.chmod(0o755)
+    marker = tmp_path / "download attempted"
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/install_kafka.sh"',
+        KAFKA_HOME=kafka_home, DOWNLOAD_MARKER=marker,
+        PATH=str(tmp_path) + os.pathsep + os.environ["PATH"],
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"Kafka already installed at {kafka_home}"
+    assert not marker.exists()
+
+
+def test_sha512_from_apache_file_parses_spaced_uppercase(tmp_path):
+    checksum = "ABCDEF0123456789" * 8
+    path = tmp_path / "archive.tgz.sha512"
+    groups = [checksum[i:i + 16] for i in range(0, len(checksum), 16)]
+    path.write_text(
+        "kafka_2.12-3.9.2.tgz: " + " \n  ".join(groups) + " \n", encoding="ascii",
+    )
+    result = run_common(tmp_path, '''
+source "$REPO_ROOT/kafka/install_kafka.sh"
+sha512_from_apache_file "$CHECKSUM_FILE"
+''', CHECKSUM_FILE=path)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == checksum.lower()
+
+
+def test_sha512_from_apache_file_rejects_invalid_checksum(tmp_path):
+    path = tmp_path / "archive.tgz.sha512"
+    path.write_text("archive.tgz: not-a-checksum\n", encoding="ascii")
+    result = run_common(tmp_path, '''
+source "$REPO_ROOT/kafka/install_kafka.sh"
+sha512_from_apache_file "$CHECKSUM_FILE"
+''', CHECKSUM_FILE=path)
+    assert result.returncode != 0
+    assert "checksum" in result.stderr.lower()
