@@ -47,3 +47,18 @@ The broker-failure test stops VM3 while VM2 remains running; controller handover
 3. Spark Job 2 on VM1 reads `order_metrics_landed.jsonl` and writes `restaurant_summary.csv` and `city_summary.csv` with order counts, averages and delay rates.
 
 Assignment constraints: both topics have 2 partitions and replication factor 2 on the same VM2/VM3 cluster. Spark reads only local files written by consumers. There is no HDFS or direct VM4-to-VM1 file transfer; metrics travel through Kafka. VM3 is the failure-test broker; VM2 remains running.
+
+## Cleaning rules
+
+Spark Job 1 applies these rules before enrichment:
+
+- **Malformed JSON:** read with the explicit order schema in permissive mode, then drop records marked as corrupt.
+- **Required fields:** all 14 input fields are required. Missing or null values are invalid, as are empty or whitespace-only strings. Extra fields are ignored.
+- **Numeric types:** `distance_km`, `order_amount` and `delivery_fee` must be JSON numbers; quoted numbers such as `"5.6"` are invalid.
+- **Timestamps:** all five timestamp fields must parse with `yyyy-MM-dd HH:mm:ss`. Spark uses `spark.sql.ansi.enabled=false` and `spark.sql.legacy.timeParserPolicy=CORRECTED`, so bad timestamp values become null instead of crashing the job; those records are dropped. Parsing and duration calculations use UTC.
+- **Event order:** require `order_timestamp <= accepted_timestamp <= picked_up_timestamp < delivered_timestamp`. Equal order, acceptance and pickup times are allowed; delivery must occur after pickup so delivery speed is defined. The expected delivery time must parse but need not follow this sequence.
+- **Positive values:** require `distance_km > 0` and `order_amount > 0`. There is no positivity restriction on `delivery_fee`.
+- **Status:** accept only the exact, case-sensitive value `DELIVERED`.
+- **Duplicates:** count records once when all 14 input field values match, regardless of JSON key order, formatting or extra fields. Keep two records with the same `order_id` when any input field differs: the team defines duplicates by the complete record, so an ID alone is insufficient to discard distinct content.
+
+For enrichment, negative delay is floored at zero. Delivery status and delay category use the unrounded delay in minutes: zero is `ON_TIME`; a positive delay is `DELAYED`, with categories `SLIGHT_DELAY` for `0 < d <= 15`, `MODERATE_DELAY` for `15 < d <= 30`, and `SEVERE_DELAY` for `d > 30`. Computed numeric metrics use half-up rounding to two decimal places; speed uses the unrounded delivery duration. Original timestamp strings are preserved in the output.
