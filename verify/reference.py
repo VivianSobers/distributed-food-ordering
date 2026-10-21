@@ -2,7 +2,16 @@ import json
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
-from foodpipe.schema import METRICS_FIELDS, NUMERIC_FIELDS, ORDER_FIELDS, TIMESTAMP_FIELDS
+import pandas as pd
+
+from foodpipe.schema import (
+    CITY_SUMMARY_COLUMNS,
+    METRICS_FIELDS,
+    NUMERIC_FIELDS,
+    ORDER_FIELDS,
+    RESTAURANT_SUMMARY_COLUMNS,
+    TIMESTAMP_FIELDS,
+)
 
 
 def _round_metric(value):
@@ -89,3 +98,33 @@ def reference_order_metrics(path) -> list[dict]:
             })
             results.append({field: cleaned[field] for field in METRICS_FIELDS})
     return results
+
+
+def _summarise(metrics, key, average_fields, columns):
+    groups = {}
+    for row in metrics:
+        groups.setdefault(row[key], []).append(row)
+    records = []
+    for value in sorted(groups):
+        rows = groups[value]
+        count = len(rows)
+        delayed = sum(1 for row in rows if row["delivery_status"] == "DELAYED")
+        record = {key: value, "order_count": count}
+        for field in average_fields:
+            record[f"avg_{field}"] = _round_metric(sum(row[field] for row in rows) / count)
+        record["delayed_order_count"] = delayed
+        record["delay_rate_pct"] = _round_metric(delayed / count * 100)
+        records.append(record)
+    return pd.DataFrame(records, columns=columns)
+
+
+def reference_summaries(metrics):
+    """Restaurant and city summaries of reference order metrics, as DataFrames."""
+    restaurants = _summarise(
+        metrics, "restaurant_id",
+        ["order_amount", "preparation_time_min", "delivery_time_min"],
+        RESTAURANT_SUMMARY_COLUMNS,
+    )
+    cities = _summarise(metrics, "city", ["order_amount", "delivery_time_min"],
+                        CITY_SUMMARY_COLUMNS)
+    return restaurants, cities

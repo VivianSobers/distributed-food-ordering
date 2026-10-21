@@ -2,8 +2,14 @@ import json
 
 import pytest
 
-from foodpipe.schema import METRICS_FIELDS, NUMERIC_FIELDS, ORDER_FIELDS
-from verify.reference import reference_order_metrics
+from foodpipe.schema import (
+    CITY_SUMMARY_COLUMNS,
+    METRICS_FIELDS,
+    NUMERIC_FIELDS,
+    ORDER_FIELDS,
+    RESTAURANT_SUMMARY_COLUMNS,
+)
+from verify.reference import reference_order_metrics, reference_summaries
 
 
 def order(**changes):
@@ -128,3 +134,41 @@ def test_equal_early_timestamps_and_nonpositive_fee_allowed(tmp_path):
                                   delivery_fee=-1))
     assert result["preparation_time_min"] == 0.0
     assert result["delivery_fee"] == -1.0
+
+
+def metric_row(restaurant_id, city, amount, prep, delivery, status):
+    return {"restaurant_id": restaurant_id, "city": city, "order_amount": amount,
+            "preparation_time_min": prep, "delivery_time_min": delivery,
+            "delivery_status": status}
+
+
+SUMMARY_ROWS = [
+    metric_row("R1", "Bengaluru", 100.0, 10.0, 20.0, "DELAYED"),
+    metric_row("R1", "Bengaluru", 200.0, 20.0, 30.0, "ON_TIME"),
+    metric_row("R2", "Pune", 301.0, 11.0, 21.0, "ON_TIME"),
+    metric_row("R2", "Bengaluru", 50.0, 5.0, 25.0, "DELAYED"),
+]
+
+
+def test_reference_restaurant_summary():
+    restaurants, _ = reference_summaries(SUMMARY_ROWS)
+    assert list(restaurants.columns) == RESTAURANT_SUMMARY_COLUMNS
+    assert restaurants.to_dict("records") == [
+        {"restaurant_id": "R1", "order_count": 2, "avg_order_amount": 150.0,
+         "avg_preparation_time_min": 15.0, "avg_delivery_time_min": 25.0,
+         "delayed_order_count": 1, "delay_rate_pct": 50.0},
+        {"restaurant_id": "R2", "order_count": 2, "avg_order_amount": 175.5,
+         "avg_preparation_time_min": 8.0, "avg_delivery_time_min": 23.0,
+         "delayed_order_count": 1, "delay_rate_pct": 50.0},
+    ]
+
+
+def test_reference_city_summary_rounds_half_up():
+    _, cities = reference_summaries(SUMMARY_ROWS)
+    assert list(cities.columns) == CITY_SUMMARY_COLUMNS
+    assert cities.to_dict("records") == [
+        {"city": "Bengaluru", "order_count": 3, "avg_order_amount": 116.67,
+         "avg_delivery_time_min": 25.0, "delayed_order_count": 2, "delay_rate_pct": 66.67},
+        {"city": "Pune", "order_count": 1, "avg_order_amount": 301.0,
+         "avg_delivery_time_min": 21.0, "delayed_order_count": 0, "delay_rate_pct": 0.0},
+    ]
