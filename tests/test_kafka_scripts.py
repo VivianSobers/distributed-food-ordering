@@ -201,3 +201,73 @@ def test_broker_template_placeholders_and_fixed_properties():
         "auto.create.topics.enable": "false",
     }
     assert sorted(lines) == sorted(f"{key}={value}" for key, value in expected.items())
+
+
+@pytest.fixture
+def generated_configs():
+    root = REPO_ROOT / "kafka/generated"
+    paths = [root / profile / f"server-{role}.properties"
+             for profile in ("cluster", "cluster.local") for role in ("vm2", "vm3")]
+    backups = {path: path.read_bytes() if path.exists() else None for path in paths}
+    new_dirs = [path for path in (root / "cluster", root / "cluster.local", root)
+                if not path.exists()]
+    yield root
+    for path, original in backups.items():
+        if original is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(original)
+    for directory in new_dirs:
+        if directory.exists():
+            directory.rmdir()
+
+
+def test_render_config_bash_syntax():
+    result = subprocess.run(
+        ["bash", "-n", str(REPO_ROOT / "kafka/render_config.sh")],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("role, node, port, roles", [
+    ("vm2", "1", "19092", "broker,controller"), ("vm3", "2", "19094", "broker"),
+])
+def test_render_local_broker_config(tmp_path, generated_configs, role, node, port, roles):
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/render_config.sh" "$TEST_ROLE"', TEST_ROLE=role,
+    )
+    assert result.returncode == 0, result.stderr
+    path = generated_configs / "cluster.local" / f"server-{role}.properties"
+    assert result.stdout.strip() == str(path)
+    text = path.read_text(encoding="utf-8")
+    assert not re.search(r"@[A-Z_]+@", text)
+    properties = dict(line.split("=", 1) for line in text.splitlines()
+                      if line and not line.startswith("#"))
+    assert properties.items() >= {
+        "process.roles": roles, "node.id": node,
+        "controller.quorum.voters": "1@127.0.0.1:19093",
+        "advertised.listeners": f"PLAINTEXT://127.0.0.1:{port}",
+        "listeners": f"PLAINTEXT://0.0.0.0:{port}" + (
+            ",CONTROLLER://0.0.0.0:19093" if role == "vm2" else ""
+        ),
+        "log.dirs": str(REPO_ROOT / ".kafka-local" / role),
+        "offsets.topic.replication.factor": "2", "min.insync.replicas": "1",
+    }.items()
+
+
+def test_render_real_vm2_config(tmp_path, generated_configs):
+    result = run_common(tmp_path, 'bash "$REPO_ROOT/kafka/render_config.sh" vm2', profile="cluster")
+    assert result.returncode == 0, result.stderr
+    path = generated_configs / "cluster/server-vm2.properties"
+    assert result.stdout.strip() == str(path)
+    text = path.read_text(encoding="utf-8")
+    assert not re.search(r"@[A-Z_]+@", text)
+    assert "advertised.listeners=PLAINTEXT://192.168.193.217:9092" in text.splitlines()
+    assert "controller.quorum.voters=1@192.168.193.217:9093" in text.splitlines()
+
+
+def test_render_config_rejects_bad_role(tmp_path, generated_configs):
+    result = run_common(tmp_path, 'bash "$REPO_ROOT/kafka/render_config.sh" vm1')
+    assert result.returncode != 0
+    assert "vm1" in result.stderr
