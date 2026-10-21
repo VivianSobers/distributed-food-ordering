@@ -81,6 +81,11 @@ def enrich_orders(clean: DataFrame) -> DataFrame:
         F.when(delay_minutes == 0, "ON_TIME").otherwise("DELAYED").alias(
             "delivery_status"
         ),
+        F.when(delay_minutes == 0, "ON_TIME")
+        .when(delay_minutes <= 15, "SLIGHT_DELAY")
+        .when(delay_minutes <= 30, "MODERATE_DELAY")
+        .otherwise("SEVERE_DELAY")
+        .alias("delay_category"),
     )
 
 

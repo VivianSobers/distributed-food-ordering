@@ -1,7 +1,7 @@
 import pytest
 
 from foodpipe.job1_enrichment import build_order_metrics
-from foodpipe.schema import NUMERIC_FIELDS, ORDER_FIELDS, TIMESTAMP_FIELDS
+from foodpipe.schema import METRICS_FIELDS, NUMERIC_FIELDS, TIMESTAMP_FIELDS
 from tests.test_job1_cleaning import BASE, rec
 
 
@@ -17,10 +17,11 @@ def test_duration_metrics(spark, tmp_path):
     assert row["delivery_time_min"] == 25.0
     assert row["fulfillment_time_min"] == 40.0
     assert row["delivery_speed_kmph"] == 12.0
-    assert list(row.asDict()) == ORDER_FIELDS + [
-        "preparation_time_min", "delivery_time_min", "fulfillment_time_min",
-        "delivery_speed_kmph", "delay_min", "delivery_status",
-    ]
+
+
+def test_columns_and_original_values(spark, tmp_path):
+    (row,) = metrics(spark, tmp_path, [rec()])
+    assert list(row.asDict().keys()) == METRICS_FIELDS
     for field in NUMERIC_FIELDS:
         assert isinstance(row[field], float)
         assert row[field] == BASE[field]
@@ -56,21 +57,22 @@ def test_speed_uses_unrounded_delivery_minutes(spark, tmp_path):
 
 
 @pytest.mark.parametrize(
-    "delivered, delay, status",
+    "delivered, delay, status, category",
     [
-        ("2026-09-01 10:30:00", 0.0, "ON_TIME"),
-        ("2026-09-01 10:40:00", 0.0, "ON_TIME"),
-        ("2026-09-01 10:40:01", 0.02, "DELAYED"),
-        ("2026-09-01 10:40:30", 0.5, "DELAYED"),
-        ("2026-09-01 10:41:00", 1.0, "DELAYED"),
-        ("2026-09-01 10:55:00", 15.0, "DELAYED"),
-        ("2026-09-01 10:55:30", 15.5, "DELAYED"),
-        ("2026-09-01 10:56:00", 16.0, "DELAYED"),
-        ("2026-09-01 11:10:00", 30.0, "DELAYED"),
-        ("2026-09-01 11:11:00", 31.0, "DELAYED"),
+        ("2026-09-01 10:30:00", 0.0, "ON_TIME", "ON_TIME"),
+        ("2026-09-01 10:40:00", 0.0, "ON_TIME", "ON_TIME"),
+        ("2026-09-01 10:40:01", 0.02, "DELAYED", "SLIGHT_DELAY"),
+        ("2026-09-01 10:40:30", 0.5, "DELAYED", "SLIGHT_DELAY"),
+        ("2026-09-01 10:41:00", 1.0, "DELAYED", "SLIGHT_DELAY"),
+        ("2026-09-01 10:55:00", 15.0, "DELAYED", "SLIGHT_DELAY"),
+        ("2026-09-01 10:55:30", 15.5, "DELAYED", "MODERATE_DELAY"),
+        ("2026-09-01 10:56:00", 16.0, "DELAYED", "MODERATE_DELAY"),
+        ("2026-09-01 11:10:00", 30.0, "DELAYED", "MODERATE_DELAY"),
+        ("2026-09-01 11:11:00", 31.0, "DELAYED", "SEVERE_DELAY"),
     ],
 )
-def test_delay_minutes(spark, tmp_path, delivered, delay, status):
+def test_delay_categories(spark, tmp_path, delivered, delay, status, category):
     (row,) = metrics(spark, tmp_path, [rec(delivered_timestamp=delivered)])
     assert row["delay_min"] == delay
     assert row["delivery_status"] == status
+    assert row["delay_category"] == category
