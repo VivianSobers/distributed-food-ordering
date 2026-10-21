@@ -339,3 +339,96 @@ def test_format_storage_fresh_directory_command(tmp_path, generated_configs, sto
         "format", "-t", "jbLv2nD5Tf6eYZrYdejohg", "-c", str(config_path),
     ]
     assert f"log.dirs={data_root / role}" in config_path.read_text().splitlines()
+
+
+@pytest.fixture
+def broker_start_stub(tmp_path):
+    kafka_home = tmp_path / "fake kafka"
+    script = kafka_home / "bin/kafka-server-start.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        '#!/bin/bash\nset -euo pipefail\n'
+        'printf \'%s\\n\' "$@" > "$START_ARGS"\n'
+        'printf \'%s\\n\' "$LOG_DIR" > "$START_LOG_DIR"\n'
+    )
+    script.chmod(0o755)
+    pgrep = tmp_path / "pgrep"
+    pgrep.write_text(
+        '#!/bin/bash\nset -euo pipefail\n'
+        'printf \'%s\\n\' "$@" > "$PGREP_ARGS"\n'
+        'if [[ "${ALREADY_RUNNING:-0}" == 1 || -f "$START_ARGS" ]]; then\n'
+        '  printf \'43210\\n\'\nelse\n  exit 1\nfi\n'
+    )
+    pgrep.chmod(0o755)
+    return {
+        "KAFKA_HOME": kafka_home, "KAFKA_DATA_ROOT": tmp_path / "broker data",
+        "START_ARGS": tmp_path / "start arguments", "START_LOG_DIR": tmp_path / "log dir",
+        "PGREP_ARGS": tmp_path / "pgrep arguments", "FOODPIPE_SKIP_PORT_WAIT": "1",
+        "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+    }
+
+
+def test_start_broker_bash_syntax():
+    result = subprocess.run(
+        ["bash", "-n", str(REPO_ROOT / "kafka/start_broker.sh")],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_start_broker_refuses_missing_metadata(tmp_path, generated_configs, broker_start_stub):
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/start_broker.sh" vm2',
+        profile="cluster", **broker_start_stub,
+    )
+    assert result.returncode != 0
+    assert "format_storage.sh" in result.stderr
+    assert not broker_start_stub["START_ARGS"].exists()
+
+
+@pytest.mark.parametrize("role, port", [("vm2", "9092"), ("vm3", "9092")])
+@pytest.mark.parametrize("foreground", [False, True])
+def test_start_broker_command_and_log_dir(
+    tmp_path, generated_configs, broker_start_stub, role, port, foreground,
+):
+    metadata = broker_start_stub["KAFKA_DATA_ROOT"] / role / "meta.properties"
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text("cluster.id=jbLv2nD5Tf6eYZrYdejohg\n")
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/start_broker.sh" "$TEST_ROLE" $TEST_MODE',
+        profile="cluster", TEST_ROLE=role, TEST_MODE="--foreground" if foreground else "",
+        **broker_start_stub,
+    )
+    assert result.returncode == 0, result.stderr
+    path = generated_configs / "cluster" / f"server-{role}.properties"
+    assert broker_start_stub["START_ARGS"].read_text().splitlines() == (
+        [] if foreground else ["-daemon"]
+    ) + [str(path)]
+    assert broker_start_stub["START_LOG_DIR"].read_text().strip() == str(
+        broker_start_stub["KAFKA_DATA_ROOT"] / f"logs-{role}"
+    )
+    assert re.search(rf"{role} broker up on port {port} \(pid \d+\)", result.stdout)
+    pgrep_args = broker_start_stub["PGREP_ARGS"].read_text().splitlines()
+    assert pgrep_args[0] == "-f"
+    pattern = pgrep_args[-1]
+    for command, expected_code in [
+        (f"java kafka.Kafka {path}", 0), (f"java kafka.Kafka {path}.other", 1),
+    ]:
+        match = subprocess.run(
+            ["grep", "-E", "-q", "--", pattern], input=command, text=True,
+        )
+        assert match.returncode == expected_code
+
+
+def test_start_broker_already_running_skips_start(tmp_path, generated_configs, broker_start_stub):
+    metadata = broker_start_stub["KAFKA_DATA_ROOT"] / "vm2/meta.properties"
+    metadata.parent.mkdir(parents=True)
+    metadata.touch()
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/start_broker.sh" vm2',
+        profile="cluster", ALREADY_RUNNING="1", **broker_start_stub,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "43210" in result.stdout
+    assert "already running" in result.stdout
+    assert not broker_start_stub["START_ARGS"].exists()
