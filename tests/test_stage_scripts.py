@@ -246,3 +246,62 @@ def test_local_e2e_rejects_invalid_arguments(tmp_path, python_stub, arguments):
     assert result.returncode != 0
     assert "Usage:" in result.stderr
     assert not Path(python_stub["PYTHON_ARGS"]).exists()
+
+
+def test_broker_failure_check_bash_syntax():
+    result = subprocess.run(["bash", "-n", str(REPO_ROOT / "scripts/broker_failure_check.sh")],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("arguments", [["--unknown"], ["--no-wait", "extra"]])
+def test_broker_failure_check_rejects_invalid_arguments(tmp_path, python_stub, arguments):
+    result = subprocess.run(["bash", str(REPO_ROOT / "scripts/broker_failure_check.sh"), *arguments],
+                            cwd=tmp_path, env=python_stub, capture_output=True, text=True, timeout=10)
+    assert result.returncode != 0
+    assert "Usage:" in result.stderr
+    assert not Path(python_stub["PYTHON_ARGS"]).exists()
+
+
+@pytest.mark.parametrize("wait_for_isr", [False, True], ids=["already-down", "leader-one-still-replicated"])
+def test_broker_failure_check_accepts_no_wait_with_stubs(tmp_path, python_stub, wait_for_isr):
+    root = tmp_path / "failure check repo"
+    for directory in ("scripts", "kafka", "config"):
+        (root / directory).mkdir(parents=True)
+    shutil.copyfile(REPO_ROOT / "scripts/broker_failure_check.sh", root / "scripts/broker_failure_check.sh")
+    shutil.copyfile(REPO_ROOT / "kafka/common.sh", root / "kafka/common.sh")
+    shutil.copyfile(REPO_ROOT / "config/cluster.local.env", root / "config/cluster.local.env")
+    (root / "kafka/describe_topics.sh").write_text(r'''#!/bin/bash
+set -euo pipefail
+count=0
+[[ ! -f "$DESCRIBE_COUNT" ]] || read -r count < "$DESCRIBE_COUNT"
+count=$((count + 1))
+printf '%s\n' "$count" > "$DESCRIBE_COUNT"
+isr=1
+if [[ "$WAIT_FOR_ISR" == 1 && "$count" -le 2 ]]; then isr=1,2; fi
+for topic in orders order_metrics; do
+    for partition in 0 1; do
+        printf 'Topic: %s Partition: %s Leader: 1 Replicas: 1,2 Isr: %s\n' "$topic" "$partition" "$isr"
+    done
+done
+''')
+    Path(python_stub["FOODPIPE_PYTHON"]).write_text(r'''#!/bin/bash
+while (( $# )); do
+    if [[ "$1" == --out ]]; then printf 'record\n' > "$2"; exit 0; fi
+    shift
+done
+exit 1
+''')
+    python_stub["FOODPIPE_ENV"] = "cluster.local"
+    python_stub["DESCRIBE_COUNT"] = str(tmp_path / "describe count")
+    python_stub["WAIT_FOR_ISR"] = "1" if wait_for_isr else "0"
+    result = subprocess.run(["bash", str(root / "scripts/broker_failure_check.sh"), "--no-wait"],
+                            cwd=tmp_path, env=python_stub, stdin=subprocess.DEVNULL,
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert "Now stop the broker" not in result.stdout
+    assert "PASS: orders before=1 after=1" in result.stdout
+    assert "PASS: order_metrics before=1 after=1" in result.stdout
+    assert int(Path(python_stub["DESCRIBE_COUNT"]).read_text()) == (4 if wait_for_isr else 3)
+    if wait_for_isr:
+        assert "Waiting for" in result.stdout
