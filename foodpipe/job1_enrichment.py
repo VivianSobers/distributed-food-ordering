@@ -50,6 +50,13 @@ def enrich_orders(clean: DataFrame) -> DataFrame:
         F.unix_timestamp(F.col("_ts_delivered"))
         - F.unix_timestamp(F.col("_ts_picked_up"))
     ) / 60.0
+    delay_minutes = F.greatest(
+        F.lit(0.0),
+        (
+            F.unix_timestamp(F.col("_ts_delivered"))
+            - F.unix_timestamp(F.col("_ts_expected"))
+        ) / 60.0,
+    )
     durations = [
         ("preparation_time_min", "_ts_accepted", "_ts_picked_up"),
         ("delivery_time_min", "_ts_picked_up", "_ts_delivered"),
@@ -70,16 +77,10 @@ def enrich_orders(clean: DataFrame) -> DataFrame:
         F.round(F.col("distance_km") / (delivery_minutes / 60.0), 2).alias(
             "delivery_speed_kmph"
         ),
-        F.round(
-            F.greatest(
-                F.lit(0.0),
-                (
-                    F.unix_timestamp(F.col("_ts_delivered"))
-                    - F.unix_timestamp(F.col("_ts_expected"))
-                ) / 60.0,
-            ),
-            2,
-        ).alias("delay_min"),
+        F.round(delay_minutes, 2).alias("delay_min"),
+        F.when(delay_minutes == 0, "ON_TIME").otherwise("DELAYED").alias(
+            "delivery_status"
+        ),
     )
 
 

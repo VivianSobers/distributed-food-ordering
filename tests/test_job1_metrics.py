@@ -19,7 +19,7 @@ def test_duration_metrics(spark, tmp_path):
     assert row["delivery_speed_kmph"] == 12.0
     assert list(row.asDict()) == ORDER_FIELDS + [
         "preparation_time_min", "delivery_time_min", "fulfillment_time_min",
-        "delivery_speed_kmph", "delay_min",
+        "delivery_speed_kmph", "delay_min", "delivery_status",
     ]
     for field in NUMERIC_FIELDS:
         assert isinstance(row[field], float)
@@ -56,19 +56,21 @@ def test_speed_uses_unrounded_delivery_minutes(spark, tmp_path):
 
 
 @pytest.mark.parametrize(
-    "delivered, delay",
+    "delivered, delay, status",
     [
-        ("2026-09-01 10:30:00", 0.0),
-        ("2026-09-01 10:40:00", 0.0),
-        ("2026-09-01 10:40:30", 0.5),
-        ("2026-09-01 10:41:00", 1.0),
-        ("2026-09-01 10:55:00", 15.0),
-        ("2026-09-01 10:55:30", 15.5),
-        ("2026-09-01 10:56:00", 16.0),
-        ("2026-09-01 11:10:00", 30.0),
-        ("2026-09-01 11:11:00", 31.0),
+        ("2026-09-01 10:30:00", 0.0, "ON_TIME"),
+        ("2026-09-01 10:40:00", 0.0, "ON_TIME"),
+        ("2026-09-01 10:40:01", 0.02, "DELAYED"),
+        ("2026-09-01 10:40:30", 0.5, "DELAYED"),
+        ("2026-09-01 10:41:00", 1.0, "DELAYED"),
+        ("2026-09-01 10:55:00", 15.0, "DELAYED"),
+        ("2026-09-01 10:55:30", 15.5, "DELAYED"),
+        ("2026-09-01 10:56:00", 16.0, "DELAYED"),
+        ("2026-09-01 11:10:00", 30.0, "DELAYED"),
+        ("2026-09-01 11:11:00", 31.0, "DELAYED"),
     ],
 )
-def test_delay_minutes(spark, tmp_path, delivered, delay):
+def test_delay_minutes(spark, tmp_path, delivered, delay, status):
     (row,) = metrics(spark, tmp_path, [rec(delivered_timestamp=delivered)])
     assert row["delay_min"] == delay
+    assert row["delivery_status"] == status
