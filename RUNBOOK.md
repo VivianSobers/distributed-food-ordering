@@ -26,3 +26,14 @@ If Kafka runs inside a virtual machine, install ZeroTier inside that VM, not on 
 Vivian approves each new member. Check that you got an address in `192.168.193.0/24` with `sudo zerotier-cli listnetworks`, and that every machine can ping the others. `sudo zerotier-cli peers` should show `DIRECT` for the other members; `RELAY` means a slow path, so try another network (a phone hotspot) before the demo.
 
 The addresses each role uses are in `config/cluster.env`. If an address changes, update that file, commit it, and `git pull` on every machine.
+
+## 2. Open the firewall for ZeroTier (Linux, once)
+
+On Linux the ZeroTier interface for this network is called `ztbpajn2rk` on every machine (check with `ip -br addr | grep zt`).
+
+| System | Command |
+| --- | --- |
+| Fedora (firewalld) | `sudo firewall-cmd --permanent --zone=trusted --add-interface=ztbpajn2rk && sudo firewall-cmd --reload` |
+| Ubuntu (ufw) | Only if `sudo ufw status` says active: `sudo ufw allow in on ztbpajn2rk` |
+
+The `zt+` wildcard does not work with firewalld; use the exact interface name. Brokers listen on port 9092 and the controller on VM2 on port 9093.
