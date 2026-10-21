@@ -33,7 +33,7 @@ def clean_orders(raw: DataFrame) -> DataFrame:
     ]
     for field, parsed in zip(TIMESTAMP_FIELDS, parsed_columns):
         clean = clean.withColumn(
-            parsed, F.try_to_timestamp(F.col(field), F.lit(TIMESTAMP_FORMAT))
+            parsed, F.to_timestamp(F.col(field), TIMESTAMP_FORMAT)
         )
         clean = clean.filter(F.col(parsed).isNotNull())
     clean = clean.filter(F.col("_ts_order") <= F.col("_ts_accepted"))

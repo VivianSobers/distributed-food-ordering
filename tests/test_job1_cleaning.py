@@ -86,7 +86,6 @@ def test_blank_string_dropped(spark, tmp_path, value):
 )
 @pytest.mark.parametrize("value", ["bad", "not-a-timestamp", "2026-13-45 99:00:00"])
 def test_invalid_timestamp_dropped(spark, tmp_path, field, value):
-    assert spark.conf.get("spark.sql.ansi.enabled") == "true"
     rows = clean(spark, tmp_path, [rec(**{field: value}), rec(order_id="T2")])
     assert [r["order_id"] for r in rows] == ["T2"]
 

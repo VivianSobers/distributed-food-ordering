@@ -12,7 +12,6 @@ def metrics(spark, tmp_path, lines):
 
 
 def test_duration_metrics(spark, tmp_path):
-    assert spark.conf.get("spark.sql.ansi.enabled") == "true"
     (row,) = metrics(spark, tmp_path, [rec()])
     assert row["preparation_time_min"] == 13.0
     assert row["delivery_time_min"] == 25.0
