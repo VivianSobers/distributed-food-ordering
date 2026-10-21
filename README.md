@@ -304,7 +304,8 @@ sequenceDiagram
 │   └── local_e2e.sh             # Full pipeline rehearsal on one laptop
 ├── tests/                       # pytest suite (Spark jobs, Kafka clients, shell scripts)
 ├── verify/
-│   └── reference.py             # Plain-Python reference for the Job 1 metrics
+│   ├── reference.py             # Plain-Python reference for the metrics and both summaries
+│   └── compare.py               # Checks Spark outputs against the reference
 ├── pytest.ini
 └── requirements.txt
 ```
@@ -365,7 +366,18 @@ To try both jobs on one machine without Kafka, give Job 1 the raw dataset (`--in
 .venv/bin/python -m pytest -q
 ```
 
-The tests cover every cleaning rule, including each required field, bad and misordered timestamps, quoted numbers and duplicate handling. They also check each metric formula against hand-worked values, including the delay-category boundaries at 15 and 30 minutes, the summary calculations, and the single-file output. `tests/test_reference.py` tests the plain-Python reference implementation in `verify/reference.py`. A test that compares Spark's output with the reference on the real dataset is in progress.
+The tests cover every cleaning rule, including each required field, bad and misordered timestamps, quoted numbers and duplicate handling. They also check each metric formula against hand-worked values, including the delay-category boundaries at 15 and 30 minutes, the summary calculations, and the single-file output. `verify/reference.py` recomputes the metrics and both summaries in plain Python, and `tests/test_reference_agrees.py` requires Spark's output on the real dataset to match it exactly. Another test feeds the dataset in twice, as happens when it is produced to the topic twice, and requires byte-identical outputs.
+
+To check outputs that came through Kafka against the reference:
+
+```bash
+.venv/bin/python -m verify.compare --dataset data/order.jsonl \
+    --metrics output/order_metrics.jsonl \
+    --restaurant output/restaurant_summary.csv \
+    --city output/city_summary.csv
+```
+
+It prints `MATCH`, or the rows that differ, and exits non-zero on any difference.
 
 ---
 
