@@ -21,6 +21,11 @@ fi
 
 log_dir="$(role_log_dir "$role")"
 mkdir -p -- "$log_dir"
+if [[ "$FOODPIPE_ENV" == cluster.local ]]; then
+    # Kafka expands JVM logging options without quotes; use a relative log path.
+    cd -- "$REPO_ROOT"
+    log_dir="$(realpath --relative-to="$REPO_ROOT" "$log_dir")"
+fi
 if [[ "$mode" == --foreground ]]; then
     LOG_DIR="$log_dir" "$KAFKA_HOME/bin/kafka-server-start.sh" "$config_path" &
     launcher_pid="$!"

@@ -732,3 +732,64 @@ exit 1
         "--bootstrap-server", "127.0.0.1:19092,127.0.0.1:19094", "--describe", "--topic", "orders",
         "--bootstrap-server", "127.0.0.1:19092,127.0.0.1:19094", "--describe", "--topic", "order_metrics",
     ]
+
+
+def test_local_cluster_bash_syntax():
+    result = subprocess.run(["bash", "-n", str(REPO_ROOT / "kafka/local_cluster.sh")],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("arguments", ["", "unknown", "up extra"])
+def test_local_cluster_rejects_invalid_arguments(tmp_path, arguments):
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/local_cluster.sh" $TEST_ARGUMENTS',
+        TEST_ARGUMENTS=arguments,
+    )
+    assert result.returncode != 0
+    assert "Usage:" in result.stderr
+
+
+def test_local_cluster_down_forces_rehearsal_and_reverse_order(tmp_path):
+    root = tmp_path / "stub repo"
+    (root / "kafka").mkdir(parents=True)
+    (root / "config").mkdir()
+    for name in ("common.sh", "local_cluster.sh"):
+        shutil.copyfile(REPO_ROOT / "kafka" / name, root / "kafka" / name)
+    shutil.copyfile(REPO_ROOT / "config/cluster.local.env", root / "config/cluster.local.env")
+    (root / "kafka/stop_broker.sh").write_text(
+        '#!/bin/bash\nprintf \'%s %s\\n\' "$FOODPIPE_ENV" "$1" >> "$CALLS"\n'
+    )
+    calls = tmp_path / "calls"
+    env = {**os.environ, "FOODPIPE_ENV": "cluster", "CALLS": str(calls)}
+    result = subprocess.run(["bash", str(root / "kafka/local_cluster.sh"), "down"],
+                            env=env, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text().splitlines() == ["cluster.local vm3", "cluster.local vm2"]
+
+
+def test_local_cluster_up_requires_installation(tmp_path):
+    result = run_common(
+        tmp_path, 'bash "$REPO_ROOT/kafka/local_cluster.sh" up',
+        KAFKA_HOME=tmp_path / "missing kafka",
+    )
+    assert result.returncode != 0
+    assert "install_kafka.sh" in result.stderr
+
+
+def test_rehearsal_start_uses_log_path_without_spaces(tmp_path, broker_start_stub):
+    root = tmp_path / "rehearsal repo"
+    (root / "kafka").mkdir(parents=True)
+    (root / "config").mkdir()
+    for name in ("common.sh", "start_broker.sh", "render_config.sh", "server.properties.template"):
+        shutil.copyfile(REPO_ROOT / "kafka" / name, root / "kafka" / name)
+    shutil.copyfile(REPO_ROOT / "config/cluster.local.env", root / "config/cluster.local.env")
+    metadata = root / ".kafka-local/vm2/meta.properties"
+    metadata.parent.mkdir(parents=True)
+    metadata.touch()
+    env = {**os.environ, **{key: str(value) for key, value in broker_start_stub.items()},
+           "FOODPIPE_ENV": "cluster.local"}
+    result = subprocess.run(["bash", str(root / "kafka/start_broker.sh"), "vm2"],
+                            env=env, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert broker_start_stub["START_LOG_DIR"].read_text().strip() == ".kafka-local/logs-vm2"
