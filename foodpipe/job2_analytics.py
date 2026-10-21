@@ -2,6 +2,7 @@ from pathlib import Path
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
 
+from foodpipe.io_utils import write_single_file
 from foodpipe.schema import (
     CITY_SUMMARY_COLUMNS,
     METRICS_FIELDS,
@@ -10,14 +11,17 @@ from foodpipe.schema import (
 )
 
 
-def load_order_metrics(spark: SparkSession, path: str | Path) -> DataFrame:
-    raw = (
+def load_raw_order_metrics(spark: SparkSession, path: str | Path) -> DataFrame:
+    return (
         spark.read.schema(METRICS_SCHEMA)
         .option("mode", "PERMISSIVE")
         .option("columnNameOfCorruptRecord", "_corrupt_record")
         .json(str(path))
         .cache()
     )
+
+
+def _clean_order_metrics(raw: DataFrame) -> DataFrame:
     return (
         raw.filter(F.col("_corrupt_record").isNull())
         .dropna(subset=[
@@ -27,6 +31,10 @@ def load_order_metrics(spark: SparkSession, path: str | Path) -> DataFrame:
         .dropDuplicates(METRICS_FIELDS)
         .select(*METRICS_FIELDS)
     )
+
+
+def load_order_metrics(spark: SparkSession, path: str | Path) -> DataFrame:
+    return _clean_order_metrics(load_raw_order_metrics(spark, path))
 
 
 def _delivery_summary(
@@ -65,3 +73,22 @@ def city_summary(df: DataFrame) -> DataFrame:
         .select(*CITY_SUMMARY_COLUMNS)
         .orderBy("city")
     )
+
+
+def run(
+    spark: SparkSession,
+    input_path: str | Path,
+    restaurant_out: str | Path,
+    city_out: str | Path,
+) -> tuple[int, int]:
+    raw = load_raw_order_metrics(spark, input_path)
+    try:
+        metrics = _clean_order_metrics(raw)
+        restaurants = restaurant_summary(metrics)
+        cities = city_summary(metrics)
+        counts = restaurants.count(), cities.count()
+        write_single_file(restaurants, restaurant_out, "csv")
+        write_single_file(cities, city_out, "csv")
+        return counts
+    finally:
+        raw.unpersist()

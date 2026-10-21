@@ -1,7 +1,8 @@
+import csv
 import json
 
-from foodpipe.job2_analytics import city_summary, load_order_metrics, restaurant_summary
-from foodpipe.schema import METRICS_FIELDS
+from foodpipe.job2_analytics import city_summary, load_order_metrics, restaurant_summary, run
+from foodpipe.schema import CITY_SUMMARY_COLUMNS, METRICS_FIELDS, RESTAURANT_SUMMARY_COLUMNS
 
 
 def metric(order_id, restaurant_id, city, amount, prep, deliv, status):
@@ -62,3 +63,50 @@ def test_city_summary(spark, tmp_path):
         {"city": "Pune", "order_count": 1, "avg_order_amount": 301.0,
          "avg_delivery_time_min": 21.0, "delayed_order_count": 0, "delay_rate_pct": 0.0},
     ]
+
+
+def test_run_writes_two_csvs(spark, tmp_path):
+    src = tmp_path / "order_metrics_landed.jsonl"
+    src.write_text("\n".join(LINES) + "\n")
+    rest, city = tmp_path / "out" / "restaurant_summary.csv", tmp_path / "out" / "city_summary.csv"
+    assert run(spark, src, rest, city) == (2, 2)
+    with rest.open() as f:
+        header, *body = list(csv.reader(f))
+    assert header == RESTAURANT_SUMMARY_COLUMNS
+    assert [r[0] for r in body] == ["R1", "R2"]
+    with city.open() as f:
+        assert next(csv.reader(f)) == CITY_SUMMARY_COLUMNS
+    assert sorted(p.name for p in rest.parent.iterdir()) == ["city_summary.csv", "restaurant_summary.csv"]
+
+
+def test_load_raw_order_metrics_preserves_all_rows(spark, tmp_path):
+    from foodpipe.job2_analytics import load_raw_order_metrics
+
+    src = tmp_path / "order_metrics_landed.jsonl"
+    src.write_text("\n".join(LINES) + "\n")
+    raw = load_raw_order_metrics(spark, src)
+    try:
+        assert raw.is_cached
+        assert raw.count() == len(LINES)
+        assert raw.columns == METRICS_FIELDS + ["_corrupt_record"]
+    finally:
+        raw.unpersist()
+
+
+def test_run_reads_changed_contents_at_same_path(spark, tmp_path):
+    src = tmp_path / "order_metrics_landed.jsonl"
+    rest = tmp_path / "restaurant_summary.csv"
+    city = tmp_path / "city_summary.csv"
+    src.write_text("\n".join(LINES) + "\n")
+    assert run(spark, src, rest, city) == (2, 2)
+
+    src.write_text(metric("E", "R3", "Mumbai", 90.0, 3.0, 12.0, "ON_TIME") + "\n")
+    assert run(spark, src, rest, city) == (1, 1)
+    with rest.open() as f:
+        rows = list(csv.DictReader(f))
+    assert [row["restaurant_id"] for row in rows] == ["R3"]
+    assert rows[0]["order_count"] == "1"
+    with city.open() as f:
+        rows = list(csv.DictReader(f))
+    assert [row["city"] for row in rows] == ["Mumbai"]
+    assert rows[0]["order_count"] == "1"
