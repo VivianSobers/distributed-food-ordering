@@ -234,6 +234,8 @@ These are the actual outputs from running Job 1 and then Job 2 directly on `data
 
 ### City summary (`city_summary.csv`)
 
+<div align="center">
+
 | city | order_count | avg_order_amount | avg_delivery_time_min | delayed_order_count | delay_rate_pct |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Bengaluru** | 16 | 634.38 | 22.50 | 12 | 75.00% |
@@ -241,7 +243,15 @@ These are the actual outputs from running Job 1 and then Job 2 directly on `data
 | **Mumbai** | 14 | 590.50 | 32.50 | 11 | 78.57% |
 | **Pune** | 7 | 614.57 | 40.00 | 3 | 42.86% |
 
+</div>
+
 ### Restaurant summary (`restaurant_summary.csv`)
+
+<details>
+<summary><b>Expand restaurant performance summary table (6 restaurants)</b></summary>
+<br>
+
+<div align="center">
 
 | restaurant_id | order_count | avg_order_amount | avg_preparation_time_min | avg_delivery_time_min | delayed_order_count | delay_rate_pct |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -251,6 +261,10 @@ These are the actual outputs from running Job 1 and then Job 2 directly on `data
 | **R04** | 7 | 639.00 | 13.29 | 35.00 | 7 | 100.00% |
 | **R05** | 7 | 614.57 | 13.14 | 40.00 | 3 | 42.86% |
 | **R06** | 7 | 590.14 | 13.00 | 45.00 | 7 | 100.00% |
+
+</div>
+
+</details>
 
 ---
 
@@ -291,6 +305,10 @@ sequenceDiagram
 <a id="repository-layout"></a>
 ## Repository Layout
 
+<details>
+<summary><b>Expand tracked repository tree</b></summary>
+<br>
+
 ```text
 .                                      # Repository root
 ├── .gitignore                         # Generated and local file exclusions
@@ -322,6 +340,8 @@ sequenceDiagram
 ```
 
 `output/` holds generated pipeline files and is ignored by Git.
+
+</details>
 
 ---
 
