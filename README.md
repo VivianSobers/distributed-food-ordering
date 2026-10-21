@@ -54,12 +54,12 @@ A four-machine pipeline for the Big Data 2026 assignment <em>Distributed Food Or
 
 Every order in the dataset carries timestamps for when it was placed, accepted, picked up, promised and delivered, plus distance, amount, fee and status. Some records are deliberately dirty: malformed JSON, missing fields, impossible timestamps, zero or negative amounts, non-delivered statuses and exact duplicates. The pipeline drops those, then works out how long each order took and how late it was.
 
-The assignment fixes a few rules that shape the design:
-
-- Spark never reads Kafka directly. A consumer first writes each topic to a local JSONL file, and Spark reads that file.
-- Both topics, `orders` and `order_metrics`, have 2 partitions and replication factor 2 on the same two-broker cluster.
-- There is no HDFS, and no file is copied from VM4 to VM1. The metrics reach VM1 only through Kafka.
-- The failure test stops broker 2 on VM3. VM2 keeps running, because controller handover is out of scope.
+> [!IMPORTANT]
+> **The assignment fixes a few rules that shape the design:**
+> - Spark never reads Kafka directly. A consumer first writes each topic to a local JSONL file, and Spark reads that file.
+> - Both topics, `orders` and `order_metrics`, have 2 partitions and replication factor 2 on the same two-broker cluster.
+> - There is no HDFS, and no file is copied from VM4 to VM1. The metrics reach VM1 only through Kafka.
+> - The failure test stops broker 2 on VM3. VM2 keeps running, because controller handover is out of scope.
 
 A separate reference implementation in plain Python (`verify/reference.py`) recomputes the Job 1 metrics without Spark, so the team has a second calculation to check Spark against.
 
