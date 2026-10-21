@@ -27,3 +27,19 @@ def test_spark_matches_reference_on_dataset(spark, tmp_path):
     ref_rest, ref_city = reference_summaries(ref_metrics)
     pd.testing.assert_frame_equal(pd.read_csv(rest_out), ref_rest, check_dtype=False)
     pd.testing.assert_frame_equal(pd.read_csv(city_out), ref_city, check_dtype=False)
+
+
+def run_both(spark, landed, out_dir):
+    out_dir.mkdir()
+    job1_enrichment.run(spark, landed, out_dir / "m.jsonl")
+    job2_analytics.run(spark, out_dir / "m.jsonl", out_dir / "r.csv", out_dir / "c.csv")
+    return [(out_dir / name).read_bytes() for name in ("m.jsonl", "r.csv", "c.csv")]
+
+
+def test_rerun_with_duplicated_topic_is_stable(spark, tmp_path):
+    # Producing the dataset twice leaves every record in the topic twice.
+    text = DATASET.read_text().rstrip("\n") + "\n"
+    single, doubled = tmp_path / "single.jsonl", tmp_path / "doubled.jsonl"
+    single.write_text(text)
+    doubled.write_text(text * 2)
+    assert run_both(spark, doubled, tmp_path / "b") == run_both(spark, single, tmp_path / "a")
