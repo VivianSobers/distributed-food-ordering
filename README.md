@@ -1,4 +1,4 @@
-# 🍽️ Distributed Food Ordering & Analytics Pipeline
+# Distributed Food Ordering & Analytics Pipeline
 
 ![Course](https://img.shields.io/badge/Course-Big%20Data%202026%20%7C%20UE24CS343AB2-1565C0?style=for-the-badge&labelColor=42A5F5)
 ![Streaming](https://img.shields.io/badge/Streaming-Apache%20Kafka%203.9.2%20KRaft-6A1B9A?style=for-the-badge&labelColor=AB47BC)
@@ -17,7 +17,7 @@ A four-machine pipeline for the Big Data 2026 assignment *Distributed Food Order
 
 ---
 
-## 📑 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [System Architecture](#system-architecture)
@@ -34,7 +34,7 @@ A four-machine pipeline for the Big Data 2026 assignment *Distributed Food Order
 ---
 
 <a id="overview"></a>
-## 🔭 Overview
+## Overview
 
 Every order in the dataset carries timestamps for when it was placed, accepted, picked up, promised and delivered, plus distance, amount, fee and status. Some records are deliberately dirty: malformed JSON, missing fields, impossible timestamps, zero or negative amounts, non-delivered statuses and exact duplicates. The pipeline drops those, then works out how long each order took and how late it was.
 
@@ -50,29 +50,29 @@ A separate reference implementation in plain Python (`verify/reference.py`) reco
 ---
 
 <a id="system-architecture"></a>
-## 🏗️ System Architecture
+## System Architecture
 
 ```mermaid
 flowchart TD
-    subgraph VM1 ["🖥️ VM1 — Ingestion & Final Analytics (Dhriti)"]
+    subgraph VM1 ["VM1 — Ingestion & Final Analytics (Dhriti)"]
         direction TB
-        source["📄 data/order.jsonl"] --> producer1["⚡ Producer 1"]
-        consumer2["📥 Consumer 2"] --> landed2["📄 order_metrics_landed.jsonl"]
-        landed2 --> job2["⚙️ Spark Job 2 (Analytics)"]
-        job2 --> out_rest["📊 restaurant_summary.csv"]
-        job2 --> out_city["📊 city_summary.csv"]
+        source["data/order.jsonl"] --> producer1["Producer 1"]
+        consumer2["Consumer 2"] --> landed2["order_metrics_landed.jsonl"]
+        landed2 --> job2["Spark Job 2 (Analytics)"]
+        job2 --> out_rest["restaurant_summary.csv"]
+        job2 --> out_city["city_summary.csv"]
     end
 
-    subgraph KafkaCluster ["🌐 ZeroTier Network — KRaft Kafka Cluster (RF=2, Partitions=2)"]
+    subgraph KafkaCluster ["ZeroTier Network — KRaft Kafka Cluster (RF=2, Partitions=2)"]
         direction TB
-        subgraph VM2 ["🖥️ VM2 (Vivian)"]
+        subgraph VM2 ["VM2 (Vivian)"]
             broker1["Kafka Broker 1 — KRaft Controller (Node 1)"]
         end
-        subgraph VM3 ["🖥️ VM3 (Dhanya)"]
+        subgraph VM3 ["VM3 (Dhanya)"]
             broker2["Kafka Broker 2 — Failure-test Target (Node 2)"]
         end
-        ordersTopic{{"📦 Topic: orders (2 Partitions, RF=2)"}}
-        metricsTopic{{"📦 Topic: order_metrics (2 Partitions, RF=2)"}}
+        ordersTopic{{"Topic: orders (2 Partitions, RF=2)"}}
+        metricsTopic{{"Topic: order_metrics (2 Partitions, RF=2)"}}
 
         broker1 -.- ordersTopic
         broker2 -.- ordersTopic
@@ -80,12 +80,12 @@ flowchart TD
         broker2 -.- metricsTopic
     end
 
-    subgraph VM4 ["🖥️ VM4 — Enrichment & Relaying (Navya)"]
+    subgraph VM4 ["VM4 — Enrichment & Relaying (Navya)"]
         direction TB
-        consumer1["📥 Consumer 1"] --> landed1["📄 orders_landed.jsonl"]
-        landed1 --> job1["⚙️ Spark Job 1 (Enrichment)"]
-        job1 --> metricsFile["📄 order_metrics.jsonl"]
-        metricsFile --> producer2["⚡ Producer 2"]
+        consumer1["Consumer 1"] --> landed1["orders_landed.jsonl"]
+        landed1 --> job1["Spark Job 1 (Enrichment)"]
+        job1 --> metricsFile["order_metrics.jsonl"]
+        metricsFile --> producer2["Producer 2"]
     end
 
     %% Distributed Data Flow Links
@@ -110,7 +110,7 @@ flowchart TD
 ---
 
 <a id="cluster-topology"></a>
-## 👥 Cluster Topology & Node Roles
+## Cluster Topology & Node Roles
 
 | Node | Teammate | Services | Role in the failure test |
 | :--- | :--- | :--- | :--- |
@@ -125,7 +125,7 @@ flowchart TD
 ---
 
 <a id="data-pipeline"></a>
-## 🔄 Data Pipeline & Business Logic
+## Data Pipeline & Business Logic
 
 ### Stage 1: Ingestion
 
@@ -136,7 +136,7 @@ flowchart TD
 
 Spark Job 1 reads `orders_landed.jsonl`.
 
-#### 🧹 Cleaning rules
+#### Cleaning rules
 
 - Malformed JSON lines are dropped.
 - All 14 fields are required. A missing field, `null`, an empty string or a whitespace-only string makes the record invalid. Extra fields are ignored.
@@ -150,7 +150,7 @@ Spark Job 1 reads `orders_landed.jsonl`.
 
 Spark runs with `spark.sql.ansi.enabled=false` and `spark.sql.legacy.timeParserPolicy=CORRECTED`, so a bad timestamp becomes null and the record is dropped instead of crashing the job. Durations are computed in UTC, so the machines' time zones don't change the results.
 
-#### 📐 Derived metrics
+#### Derived metrics
 
 | Metric column | Definition | Meaning |
 | :--- | :--- | :--- |
@@ -190,11 +190,11 @@ All averages and rates are rounded to 2 decimal places.
 ---
 
 <a id="analytics-preview"></a>
-## 📊 Analytics Output Preview
+## Analytics Output Preview
 
 These are the actual outputs from running Job 1 and then Job 2 directly on `data/order.jsonl`, on one machine without Kafka. Of the 62 input lines, 44 orders survive cleaning. The CSVs store plain numbers; the `%` signs are added here for readability.
 
-### 🏙️ City summary (`city_summary.csv`)
+### City summary (`city_summary.csv`)
 
 | city | order_count | avg_order_amount | avg_delivery_time_min | delayed_order_count | delay_rate_pct |
 | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -203,7 +203,7 @@ These are the actual outputs from running Job 1 and then Job 2 directly on `data
 | **Mumbai** | 14 | 590.50 | 32.50 | 11 | 78.57% |
 | **Pune** | 7 | 614.57 | 40.00 | 3 | 42.86% |
 
-### 🍳 Restaurant summary (`restaurant_summary.csv`)
+### Restaurant summary (`restaurant_summary.csv`)
 
 | restaurant_id | order_count | avg_order_amount | avg_preparation_time_min | avg_delivery_time_min | delayed_order_count | delay_rate_pct |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -217,7 +217,7 @@ These are the actual outputs from running Job 1 and then Job 2 directly on `data
 ---
 
 <a id="fault-tolerance"></a>
-## ⚡ Broker Failure Test
+## Broker Failure Test
 
 With replication factor 2, every partition has a copy on both brokers. When VM3 stops, the controller on VM2 moves leadership of VM3's partitions to broker 1, and clients carry on through VM2. The test has not been run yet; this is the behaviour it is meant to show.
 
@@ -251,7 +251,7 @@ sequenceDiagram
 ---
 
 <a id="repository-layout"></a>
-## 📁 Repository Layout
+## Repository Layout
 
 ```text
 .                                      # Repository root
@@ -288,7 +288,7 @@ sequenceDiagram
 ---
 
 <a id="getting-started"></a>
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -329,7 +329,7 @@ To try both jobs on one machine without Kafka, give Job 1 the raw dataset (`--in
 ---
 
 <a id="testing-verification"></a>
-## 🧪 Testing
+## Testing
 
 ```bash
 .venv/bin/python -m pytest -q
@@ -340,7 +340,7 @@ The tests cover every cleaning rule, including each required field, bad and miso
 ---
 
 <a id="engineering-highlights"></a>
-## 💡 Design Decisions
+## Design Decisions
 
 > [!TIP]
 > 1. **KRaft instead of ZooKeeper.** Kafka stores its cluster metadata in its own Raft log, so there's no separate ZooKeeper ensemble to run. One controller on VM2 is enough for this assignment.
@@ -354,7 +354,7 @@ The tests cover every cleaning rule, including each required field, bad and miso
 ---
 
 <a id="team-members"></a>
-## 👥 Team Members
+## Team Members
 
 <div align="center">
 
