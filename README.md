@@ -31,3 +31,19 @@ flowchart TD
 | VM4 | Navya ([@nav-yeah](https://github.com/nav-yeah)) | Consumer 1 lands `orders` into `orders_landed.jsonl`; Spark Job 1 writes `order_metrics.jsonl`; Producer 2 publishes that file to `order_metrics`. |
 
 The broker-failure test stops VM3 while VM2 remains running; controller handover is out of scope. A spare standby machine can take over any role except VM2 during the demo.
+
+## Data flow
+
+### Stage 1: Order enrichment
+
+1. Producer 1 on VM1 reads `data/order.jsonl` and publishes its records to the `orders` topic.
+2. Consumer 1 on VM4 reads `orders` and writes the local file `orders_landed.jsonl`.
+3. Spark Job 1 on VM4 reads `orders_landed.jsonl`, cleans and deduplicates orders, and writes enriched records to `order_metrics.jsonl`.
+
+### Stage 2: Operations analytics
+
+1. Producer 2 on VM4 reads `order_metrics.jsonl` and publishes its records to the `order_metrics` topic.
+2. Consumer 2 on VM1 reads `order_metrics` and writes the local file `order_metrics_landed.jsonl`.
+3. Spark Job 2 on VM1 reads `order_metrics_landed.jsonl` and writes `restaurant_summary.csv` and `city_summary.csv` with order counts, averages and delay rates.
+
+Assignment constraints: both topics have 2 partitions and replication factor 2 on the same VM2/VM3 cluster. Spark reads only local files written by consumers. There is no HDFS or direct VM4-to-VM1 file transfer; metrics travel through Kafka. VM3 is the failure-test broker; VM2 remains running.
