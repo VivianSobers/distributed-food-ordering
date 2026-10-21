@@ -354,7 +354,9 @@ sequenceDiagram
 - Java 11. If your default `java` is a different version, point `JAVA_HOME` at a Java 11 install before running anything.
 - Kafka 3.9.2 (`kafka_2.12-3.9.2`) on the two broker machines only. PySpark 3.3.4 comes from `requirements.txt`, so you don't need a separate Spark install.
 
-### Set up the environment
+### Quick Start
+
+#### Step 1: Set up the environment
 
 ```bash
 git clone https://github.com/VivianSobers/distributed-food-ordering.git
@@ -367,7 +369,7 @@ python3.10 -m venv .venv
 export JAVA_HOME=/path/to/jdk-11
 ```
 
-### Run the Spark jobs
+#### Step 2: Run the Spark jobs
 
 In the pipeline, Job 1 runs on VM4 against the landed `orders` file and Job 2 runs on VM1 against the landed `order_metrics` file:
 
@@ -423,8 +425,8 @@ The tests cover every cleaning rule, including each required field, bad and miso
 | **Dhanya** | [@DhanyaSPrasad](https://github.com/DhanyaSPrasad) | Kafka broker 2 & failure test | **VM3** |
 | **Navya** | [@nav-yeah](https://github.com/nav-yeah) | Consumer 1, Spark Job 1 & Producer 2 | **VM4** |
 
-</div>
+<br>
 
-<div align="center">
 <sub>Big Data 2026 (UE24CS343AB2)</sub>
+
 </div>
