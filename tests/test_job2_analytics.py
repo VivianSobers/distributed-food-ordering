@@ -1,6 +1,6 @@
 import json
 
-from foodpipe.job2_analytics import load_order_metrics, restaurant_summary
+from foodpipe.job2_analytics import city_summary, load_order_metrics, restaurant_summary
 from foodpipe.schema import METRICS_FIELDS
 
 
@@ -51,4 +51,14 @@ def test_restaurant_summary(spark, tmp_path):
         {"restaurant_id": "R2", "order_count": 2, "avg_order_amount": 175.5,
          "avg_preparation_time_min": 8.0, "avg_delivery_time_min": 23.0,
          "delayed_order_count": 1, "delay_rate_pct": 50.0},
+    ]
+
+
+def test_city_summary(spark, tmp_path):
+    rows = [r.asDict() for r in city_summary(load(spark, tmp_path)).collect()]
+    assert rows == [
+        {"city": "Bengaluru", "order_count": 3, "avg_order_amount": 116.67,
+         "avg_delivery_time_min": 25.0, "delayed_order_count": 2, "delay_rate_pct": 66.67},
+        {"city": "Pune", "order_count": 1, "avg_order_amount": 301.0,
+         "avg_delivery_time_min": 21.0, "delayed_order_count": 0, "delay_rate_pct": 0.0},
     ]
