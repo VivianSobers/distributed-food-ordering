@@ -142,7 +142,7 @@ Spark Job 1 reads `orders_landed.jsonl`.
 - All 14 fields are required. A missing field, `null`, an empty string or a whitespace-only string makes the record invalid. Extra fields are ignored.
 - `distance_km`, `order_amount` and `delivery_fee` must be JSON numbers. A quoted number such as `"5.6"` is invalid.
 - All five timestamps must parse as `yyyy-MM-dd HH:mm:ss` and must be in order:
-  $$\text{order\_timestamp} \le \text{accepted\_timestamp} \le \text{picked\_up\_timestamp} < \text{delivered\_timestamp}$$
+  `order_timestamp <= accepted_timestamp <= picked_up_timestamp < delivered_timestamp`.
   Delivery has to come strictly after pickup, or the speed would divide by zero.
 - `distance_km > 0` and `order_amount > 0`.
 - Only `status == "DELIVERED"` (exact, case-sensitive) is kept.
@@ -154,20 +154,20 @@ Spark runs with `spark.sql.ansi.enabled=false` and `spark.sql.legacy.timeParserP
 
 | Metric column | Definition | Meaning |
 | :--- | :--- | :--- |
-| `preparation_time_min` | $\text{picked\_up} - \text{accepted}$ | Kitchen time, in minutes. |
-| `delivery_time_min` | $\text{delivered} - \text{picked\_up}$ | Time on the road, in minutes. |
-| `fulfillment_time_min` | $\text{delivered} - \text{order}$ | Order placed to order delivered, in minutes. |
-| `delivery_speed_kmph` | $\frac{\text{distance\_km}}{\text{delivery\_time\_min} / 60}$ | Average delivery speed in km/h. |
-| `delay_min` | $\max(0, \text{delivered} - \text{expected\_delivery})$ | Minutes past the promised time, floored at 0. |
+| `preparation_time_min` | `picked_up_timestamp - accepted_timestamp` | Kitchen time, in minutes. |
+| `delivery_time_min` | `delivered_timestamp - picked_up_timestamp` | Time on the road, in minutes. |
+| `fulfillment_time_min` | `delivered_timestamp - order_timestamp` | Order placed to order delivered, in minutes. |
+| `delivery_speed_kmph` | `distance_km / (delivery_time_min / 60)` | Average delivery speed in km/h. |
+| `delay_min` | `max(0, delivered_timestamp - expected_delivery_timestamp)` | Minutes past the promised time, floored at 0. |
 | `delivery_status` | `ON_TIME` if the delay is 0, else `DELAYED` | |
 | `delay_category` | see below | |
 
-$$\text{delay\_category} = \begin{cases}
-\text{ON\_TIME} & \text{delay\_min} = 0 \\
-\text{SLIGHT\_DELAY} & 0 < \text{delay\_min} \le 15 \\
-\text{MODERATE\_DELAY} & 15 < \text{delay\_min} \le 30 \\
-\text{SEVERE\_DELAY} & \text{delay\_min} > 30
-\end{cases}$$
+| `delay_min` | `delay_category` |
+| :--- | :--- |
+| `0` | `ON_TIME` |
+| more than 0, up to 15 | `SLIGHT_DELAY` |
+| more than 15, up to 30 | `MODERATE_DELAY` |
+| more than 30 | `SEVERE_DELAY` |
 
 Status and category use the unrounded delay, and speed uses the unrounded delivery time. The computed numbers are then rounded half-up to 2 decimal places. Job 1 writes a single file, `order_metrics.jsonl`: one JSON object per line holding the 14 input fields plus the 7 computed ones, sorted so a rerun produces the same file.
 
@@ -183,7 +183,7 @@ Spark Job 2 reads `order_metrics_landed.jsonl`, drops malformed lines and exact 
 1. `restaurant_summary.csv`: `restaurant_id`, `order_count`, `avg_order_amount`, `avg_preparation_time_min`, `avg_delivery_time_min`, `delayed_order_count`, `delay_rate_pct`
 2. `city_summary.csv`: `city`, `order_count`, `avg_order_amount`, `avg_delivery_time_min`, `delayed_order_count`, `delay_rate_pct`
 
-$$\text{delay\_rate\_pct} = \text{round}\left(\frac{\text{delayed\_order\_count}}{\text{order\_count}} \times 100, 2\right)$$
+`delay_rate_pct = round(delayed_order_count / order_count * 100, 2)`
 
 All averages and rates are rounded to 2 decimal places.
 
