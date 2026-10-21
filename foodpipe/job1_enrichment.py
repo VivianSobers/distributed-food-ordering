@@ -1,8 +1,10 @@
+import argparse
 from pathlib import Path
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
 
 from foodpipe.io_utils import write_single_file
+from foodpipe.spark_session import get_spark
 from foodpipe.schema import (
     NUMERIC_FIELDS,
     ORDER_FIELDS,
@@ -105,3 +107,22 @@ def run(
         return count
     finally:
         raw.unpersist()
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Enrich delivered order records.")
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args(argv)
+    active_session = SparkSession.getActiveSession()
+    spark = get_spark("order-enrichment")
+    try:
+        count = run(spark, args.input, args.output)
+        print(f"Job 1: {count} order metrics -> {args.output}")
+    finally:
+        if active_session is None:
+            spark.stop()
+
+
+if __name__ == "__main__":
+    main()

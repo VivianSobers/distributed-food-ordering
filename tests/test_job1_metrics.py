@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from foodpipe.job1_enrichment import build_order_metrics, run
+from foodpipe.job1_enrichment import build_order_metrics, main, run
 from foodpipe.schema import METRICS_FIELDS, NUMERIC_FIELDS, ORDER_FIELDS, TIMESTAMP_FIELDS
 from tests.test_job1_cleaning import BASE, rec
 
@@ -107,3 +107,16 @@ def test_run_orders_same_id_by_all_fields(spark, tmp_path):
         rows = [json.loads(line) for line in out.read_text().splitlines()]
         assert [{field: row[field] for field in ORDER_FIELDS} for row in rows] == expected
     assert outputs[0] == outputs[1]
+
+
+def test_main_writes_file_and_prints_count(spark, tmp_path, capsys):
+    src = tmp_path / "orders_landed.jsonl"
+    src.write_text(rec() + "\n")
+    out = tmp_path / "out" / "order_metrics.jsonl"
+    main(["--input", str(src), "--output", str(out)])
+    assert f"Job 1: 1 order metrics -> {out}" in capsys.readouterr().out.splitlines()
+    rows = [json.loads(line) for line in out.read_text().splitlines()]
+    assert len(rows) == 1
+    assert rows[0]["order_id"] == BASE["order_id"]
+    assert list(rows[0]) == METRICS_FIELDS
+    assert spark.range(1).count() == 1
