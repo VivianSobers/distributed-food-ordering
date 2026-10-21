@@ -68,60 +68,14 @@ A separate reference implementation in plain Python (`verify/reference.py`) reco
 <a id="system-architecture"></a>
 ## System Architecture
 
-```mermaid
-flowchart TD
-    subgraph VM1 ["VM1 — Ingestion & Final Analytics (Dhriti)"]
-        direction TB
-        source["data/order.jsonl"] --> producer1["Producer 1"]
-        consumer2["Consumer 2"] --> landed2["order_metrics_landed.jsonl"]
-        landed2 --> job2["Spark Job 2 (Analytics)"]
-        job2 --> out_rest["restaurant_summary.csv"]
-        job2 --> out_city["city_summary.csv"]
-    end
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.svg">
+    <img src="docs/images/architecture-light.svg" width="100%" alt="Orders flow from VM1 through the orders topic to VM4, where Spark Job 1 enriches them; the metrics flow back through the order_metrics topic to VM1 for Spark Job 2. Both topics have two partitions, each led by one broker and replicated on the other.">
+  </picture>
+</p>
 
-    subgraph KafkaCluster ["ZeroTier Network — KRaft Kafka Cluster (RF=2, Partitions=2)"]
-        direction TB
-        subgraph VM2 ["VM2 (Vivian)"]
-            broker1["Kafka Broker 1 — KRaft Controller (Node 1)"]
-        end
-        subgraph VM3 ["VM3 (Dhanya)"]
-            broker2["Kafka Broker 2 — Failure-test Target (Node 2)"]
-        end
-        ordersTopic{{"Topic: orders (2 Partitions, RF=2)"}}
-        metricsTopic{{"Topic: order_metrics (2 Partitions, RF=2)"}}
-
-        broker1 -.- ordersTopic
-        broker2 -.- ordersTopic
-        broker1 -.- metricsTopic
-        broker2 -.- metricsTopic
-    end
-
-    subgraph VM4 ["VM4 — Enrichment & Relaying (Navya)"]
-        direction TB
-        consumer1["Consumer 1"] --> landed1["orders_landed.jsonl"]
-        landed1 --> job1["Spark Job 1 (Enrichment)"]
-        job1 --> metricsFile["order_metrics.jsonl"]
-        metricsFile --> producer2["Producer 2"]
-    end
-
-    %% Distributed Data Flow Links
-    producer1 ==>|"1. Publish Raw Orders"| ordersTopic
-    ordersTopic ==>|"2. Consume & Land Orders"| consumer1
-    producer2 ==>|"3. Publish Enriched Metrics"| metricsTopic
-    metricsTopic ==>|"4. Consume & Land Metrics"| consumer2
-
-    classDef vmBox fill:#f8fafc,stroke:#334155,stroke-width:2px,color:#0f172a;
-    classDef kafkaBox fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a8a;
-    classDef topicBox fill:#fef3c7,stroke:#d97706,stroke-width:2px,stroke-dasharray: 4 2,color:#78350f;
-    classDef processBox fill:#ecfdf5,stroke:#059669,stroke-width:1.5px,color:#064e3b;
-    classDef fileBox fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
-
-    class VM1,VM4 vmBox;
-    class KafkaCluster,VM2,VM3 kafkaBox;
-    class ordersTopic,metricsTopic topicBox;
-    class producer1,producer2,consumer1,consumer2,job1,job2 processBox;
-    class source,landed1,metricsFile,landed2,out_rest,out_city fileBox;
-```
+<p align="center"><sub>Numbers give the pipeline order. Each topic partition has a leader on one broker and a follower copy on the other, which is why the data survives VM3 being stopped. The diagram is drawn by <code>docs/images/architecture.py</code>.</sub></p>
 
 ---
 
