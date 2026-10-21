@@ -1,8 +1,10 @@
+import argparse
 from pathlib import Path
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
 
 from foodpipe.io_utils import write_single_file
+from foodpipe.spark_session import get_spark
 from foodpipe.schema import (
     CITY_SUMMARY_COLUMNS,
     METRICS_FIELDS,
@@ -92,3 +94,28 @@ def run(
         return counts
     finally:
         raw.unpersist()
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Summarise order delivery performance.")
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--restaurant-out", required=True)
+    parser.add_argument("--city-out", required=True)
+    args = parser.parse_args(argv)
+    active_session = SparkSession.getActiveSession()
+    spark = get_spark("order-analytics")
+    try:
+        restaurants, cities = run(
+            spark, args.input, args.restaurant_out, args.city_out,
+        )
+        print(
+            f"Job 2: {restaurants} restaurants -> {args.restaurant_out}, "
+            f"{cities} cities -> {args.city_out}"
+        )
+    finally:
+        if active_session is None:
+            spark.stop()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,7 +1,7 @@
 import csv
 import json
 
-from foodpipe.job2_analytics import city_summary, load_order_metrics, restaurant_summary, run
+from foodpipe.job2_analytics import city_summary, load_order_metrics, main, restaurant_summary, run
 from foodpipe.schema import CITY_SUMMARY_COLUMNS, METRICS_FIELDS, RESTAURANT_SUMMARY_COLUMNS
 
 
@@ -110,3 +110,24 @@ def test_run_reads_changed_contents_at_same_path(spark, tmp_path):
         rows = list(csv.DictReader(f))
     assert [row["city"] for row in rows] == ["Mumbai"]
     assert rows[0]["order_count"] == "1"
+
+
+def test_main_writes_files_and_prints_counts(spark, tmp_path, capsys):
+    src = tmp_path / "order_metrics_landed.jsonl"
+    src.write_text("\n".join(LINES) + "\n")
+    rest = tmp_path / "out" / "restaurant_summary.csv"
+    city = tmp_path / "out" / "city_summary.csv"
+    main([
+        "--input", str(src), "--restaurant-out", str(rest), "--city-out", str(city),
+    ])
+    expected = f"Job 2: 2 restaurants -> {rest}, 2 cities -> {city}"
+    assert expected in capsys.readouterr().out.splitlines()
+    with rest.open() as f:
+        header, *rows = list(csv.reader(f))
+    assert header == RESTAURANT_SUMMARY_COLUMNS
+    assert [row[0] for row in rows] == ["R1", "R2"]
+    with city.open() as f:
+        header, *rows = list(csv.reader(f))
+    assert header == CITY_SUMMARY_COLUMNS
+    assert [row[0] for row in rows] == ["Bengaluru", "Pune"]
+    assert spark.range(1).count() == 1
