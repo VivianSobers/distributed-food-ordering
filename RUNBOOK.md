@@ -93,3 +93,18 @@ Steps 5 and 6 can run in either order; the VM4 consumer waits up to 5 minutes fo
 To show that the pipeline keeps working with only one broker, repeat steps 5 to 8 while VM3 is still stopped, before step 11.
 
 Each stage overwrites its files in `output/`, so a rerun starts clean. Running step 3 again empties the topics; if you skip it and produce again, the topic holds every record twice, and both Spark jobs still give the same results because they count exact duplicates once.
+
+## 5. When something goes wrong
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| `Missing .../meta.properties; run bash kafka/format_storage.sh` | Storage never formatted on this machine | Run `bash kafka/format_storage.sh vm2` (or `vm3`), then start again |
+| `Cluster ID mismatch in .../meta.properties` | Data folder formatted for a different cluster | Stop the broker, delete the data folder named in the message, run `format_storage.sh` again |
+| Broker start times out | Java is not 11, or the port is taken | Read the log lines it prints; check `java -version` and `ss -ltn \| grep 9092` |
+| `Only 1 of 2 brokers are up; start VM3 first` | VM3 is down or cannot reach VM2 | Start VM3; ping VM2 from VM3; check port 9093 is open on VM2 |
+| Producer or consumer hangs, then fails to connect | ZeroTier or firewall | Ping both broker IPs; check the firewall rule from section 2; check `config/cluster.env` matches `zerotier-cli listnetworks` |
+| Consumer prints 0 records and exits | Nothing was produced in time | Check the producer ran against the same cluster; raise `FOODPIPE_MAX_WAIT` |
+| Spark crashes before starting | Wrong Java version | `export JAVA_HOME=/path/to/jdk-11` and rerun |
+| Broker died because a laptop slept | Laptop went to sleep | `bash kafka/start_broker.sh vm2` (or `vm3`); keep laptops plugged in and awake |
+
+**Standby machine.** A spare server is set up with the repository, Java and Kafka. If VM1, VM3 or VM4 fails, Vivian moves that role's ZeroTier IP to the standby, and the standby runs the same script after `git pull`. VM2 cannot be replaced once the demo has started, because the controller lives there.
