@@ -225,7 +225,7 @@ These are the actual outputs from running Job 1 and then Job 2 directly on `data
 <a id="fault-tolerance"></a>
 ## Broker Failure Test
 
-With replication factor 2, every partition has a copy on both brokers. When VM3 stops, the controller on VM2 moves leadership of VM3's partitions to broker 1, and clients carry on through VM2. `scripts/broker_failure_check.sh` runs the test: it counts both topics, waits for VM3 to be stopped and for broker 2 to drop out of the in-sync set, then counts again. In the one-laptop rehearsal all 62 orders and 44 metrics were still readable with broker 2 stopped.
+With replication factor 2, every partition has a copy on both brokers. When VM3 stops, the controller on VM2 moves leadership of VM3's partitions to broker 1, and clients carry on through VM2. `scripts/broker_failure_check.sh` runs the test: it counts both topics, waits for VM3 to be stopped and for broker 2 to drop out of the in-sync set, then counts again. In the one-laptop rehearsal all 62 orders and 44 metrics were still readable with broker 2 stopped. After VM3 restarts, `scripts/broker_rejoin_check.sh` waits until every partition is back in sync on both brokers and reads both topics again. In rehearsal, running the whole pipeline again with VM3 stopped, and once more after it rejoined, gave outputs byte-identical to the first run.
 
 ```mermaid
 sequenceDiagram
@@ -301,6 +301,8 @@ sequenceDiagram
 │   ├── vm4_stage1.sh            # VM4: consume orders, Spark Job 1, produce order_metrics
 │   ├── vm1_stage2.sh            # VM1: consume order_metrics, Spark Job 2, print the tables
 │   ├── broker_failure_check.sh  # Counts both topics before and after VM3 stops
+│   ├── broker_rejoin_check.sh   # Waits for VM3 back in the ISR, then reads both topics
+│   ├── demo_env.sh              # Prints KAFKA_HOME and BS for the demo terminal
 │   └── local_e2e.sh             # Full pipeline rehearsal on one laptop
 ├── tests/                       # pytest suite (Spark jobs, Kafka clients, shell scripts)
 ├── verify/
