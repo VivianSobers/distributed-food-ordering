@@ -49,10 +49,15 @@ python3.10 -m venv .venv && .venv/bin/pip install -r requirements.txt
 java -version     # must be 11; otherwise: export JAVA_HOME=/path/to/jdk-11
 ```
 
-VM2 and VM3 only:
+Every machine also needs the Kafka command-line tools, because the topic checks and the examiner's own commands run from any VM:
 
 ```bash
 bash kafka/install_kafka.sh          # Kafka 3.9.2 into ~/kafka_2.12-3.9.2, checksum verified
+```
+
+VM2 and VM3 only:
+
+```bash
 bash kafka/format_storage.sh vm2     # on VM2 (use vm3 on VM3)
 bash kafka/start_broker.sh vm2       # on VM2 (use vm3 on VM3)
 ```
@@ -72,7 +77,15 @@ To rehearse the whole pipeline on one laptop without the other machines, run `ba
 
 ## 4. Demo order
 
-Run `git pull` on every machine first.
+Before the demo, on every machine, in the terminal you will use for Kafka commands:
+
+```bash
+git pull
+rm -rf output                        # the course asks for no old outputs; data/order.jsonl stays untouched
+eval "$(bash scripts/demo_env.sh)"   # exports KAFKA_HOME and BS=<VM2 IP>:9092
+```
+
+The examiner may then run Kafka's own tools directly, for example `$KAFKA_HOME/bin/kafka-topics.sh --bootstrap-server $BS --describe --topic orders`. `BS` points at VM2, which is never stopped.
 
 | Step | Where | Command | What the examiner sees |
 | --- | --- | --- | --- |
@@ -84,15 +97,16 @@ Run `git pull` on every machine first.
 | 6 | VM1 | `bash scripts/vm1_stage1_produce.sh` | 62 records produced, split across partitions 0 and 1 |
 | 7 | VM4 | (continues by itself) | 62 consumed, Spark Job 1 writes 44 metrics, Producer 2 sends them |
 | 8 | VM1 | `bash scripts/vm1_stage2.sh` | 44 consumed, Spark Job 2 prints the restaurant and city tables |
-| 9 | VM1 or VM4 | `bash scripts/broker_failure_check.sh` | Counts both topics, then asks for VM3 to be stopped |
-| 10 | VM3 | `bash kafka/stop_broker.sh vm3`, then press Enter on the step 9 machine | Every partition moves to broker 1; the check prints `PASS` for both topics |
-| 11 | VM3 | `bash kafka/start_broker.sh vm3` | Broker 2 rejoins and catches up |
+| 9 | VM1 or VM4 | `bash scripts/broker_failure_check.sh` | Topic configuration and ISR before the failure, counts both topics, then asks for VM3 to be stopped |
+| 10 | VM3 | `bash kafka/stop_broker.sh vm3`, then press Enter on the step 9 machine | Every partition led by broker 1 with ISR `1`; the check prints `PASS` for both topics |
+| 11 | VM4, VM1 | Repeat steps 5 to 8 with VM3 still stopped | Pipeline continuity: the same 62 orders, 44 metrics and summary tables |
+| 12 | VM3 | `bash kafka/start_broker.sh vm3` | Broker 2 starts and catches up |
+| 13 | VM1 or VM4 | `bash scripts/broker_rejoin_check.sh` | Waits until every partition shows `in sync 1,2`, then reads both topics and prints `PASS` |
+| 14 | VM4, VM1 | Repeat steps 5 to 8 once more | The pipeline keeps working with both brokers back |
 
 Steps 5 and 6 can run in either order; the VM4 consumer waits up to 5 minutes for data (`FOODPIPE_MAX_WAIT` changes that) and stops once the topic has been quiet for 15 seconds (`FOODPIPE_IDLE_TIMEOUT`).
 
-To show that the pipeline keeps working with only one broker, repeat steps 5 to 8 while VM3 is still stopped, before step 11.
-
-Each stage overwrites its files in `output/`, so a rerun starts clean. Running step 3 again empties the topics; if you skip it and produce again, the topic holds every record twice, and both Spark jobs still give the same results because they count exact duplicates once.
+Steps 11 and 14 produce the orders again without resetting the topics, so `orders` then holds every record two or three times. Both Spark jobs count exact duplicates once, so the outputs stay byte-identical to the first run; a test checks this. Each stage overwrites its files in `output/`, and the examiner grades the files from the live run, which can be checked at the course's output evaluator.
 
 ## 5. When something goes wrong
 
