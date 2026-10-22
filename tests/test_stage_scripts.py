@@ -305,3 +305,35 @@ exit 1
     assert int(Path(python_stub["DESCRIBE_COUNT"]).read_text()) == (4 if wait_for_isr else 3)
     if wait_for_isr:
         assert "Waiting for" in result.stdout
+
+
+DEMO_ENV = REPO_ROOT / "scripts/demo_env.sh"
+
+
+@pytest.mark.parametrize("profile, bs", [
+    (None, "192.168.193.217:9092"),
+    ("cluster.local", "127.0.0.1:19092"),
+])
+def test_demo_env_exports_kafka_home_and_bs(tmp_path, profile, bs):
+    kafka_home = tmp_path / "kafka home"
+    (kafka_home / "bin").mkdir(parents=True)
+    (kafka_home / "bin/kafka-topics.sh").write_text("#!/bin/bash\n")
+    (kafka_home / "bin/kafka-topics.sh").chmod(0o755)
+    env = {**os.environ, "KAFKA_HOME": str(kafka_home)}
+    env.pop("FOODPIPE_ENV", None)
+    if profile:
+        env["FOODPIPE_ENV"] = profile
+    result = subprocess.run(
+        ["bash", "-c", f'eval "$(bash {str(DEMO_ENV)!r})" && printf "%s\\n" "$KAFKA_HOME" "$BS"'],
+        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [str(kafka_home), bs]
+
+
+def test_demo_env_requires_kafka_install(tmp_path):
+    env = {**os.environ, "KAFKA_HOME": str(tmp_path / "missing"), "FOODPIPE_ENV": "cluster.local"}
+    result = subprocess.run(["bash", str(DEMO_ENV)], cwd=tmp_path, env=env,
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode != 0
+    assert "install_kafka.sh" in result.stderr
+    assert result.stdout == ""
