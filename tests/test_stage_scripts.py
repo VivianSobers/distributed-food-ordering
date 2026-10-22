@@ -337,3 +337,86 @@ def test_demo_env_requires_kafka_install(tmp_path):
     assert result.returncode != 0
     assert "install_kafka.sh" in result.stderr
     assert result.stdout == ""
+
+
+REJOIN = REPO_ROOT / "scripts/broker_rejoin_check.sh"
+
+
+def rejoin_repo(tmp_path, python_stub, rejoin_after, records):
+    root = tmp_path / "rejoin check repo"
+    for directory in ("scripts", "kafka", "config"):
+        (root / directory).mkdir(parents=True)
+    shutil.copyfile(REJOIN, root / "scripts/broker_rejoin_check.sh")
+    shutil.copyfile(REPO_ROOT / "kafka/common.sh", root / "kafka/common.sh")
+    shutil.copyfile(REPO_ROOT / "config/cluster.local.env", root / "config/cluster.local.env")
+    (root / "kafka/describe_topics.sh").write_text(r'''#!/bin/bash
+set -euo pipefail
+count=0
+[[ ! -f "$DESCRIBE_COUNT" ]] || read -r count < "$DESCRIBE_COUNT"
+count=$((count + 1))
+printf '%s\n' "$count" > "$DESCRIBE_COUNT"
+isr=1
+if (( count > REJOIN_AFTER )); then isr=1,2; fi
+for topic in orders order_metrics; do
+    for partition in 0 1; do
+        printf 'Topic: %s Partition: %s Leader: 1 Replicas: 1,2 Isr: %s\n' "$topic" "$partition" "$isr"
+    done
+done
+''')
+    Path(python_stub["FOODPIPE_PYTHON"]).write_text(r'''#!/bin/bash
+while (( $# )); do
+    if [[ "$1" == --out ]]; then
+        : > "$2"
+        for ((i = 0; i < RECORDS; i++)); do printf 'record\n' >> "$2"; done
+        exit 0
+    fi
+    shift
+done
+exit 1
+''')
+    python_stub.update(FOODPIPE_ENV="cluster.local", DESCRIBE_COUNT=str(tmp_path / "describe count"),
+                       REJOIN_AFTER=str(rejoin_after), RECORDS=str(records))
+    return root / "scripts/broker_rejoin_check.sh"
+
+
+def test_broker_rejoin_check_bash_syntax():
+    result = subprocess.run(["bash", "-n", str(REJOIN)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_broker_rejoin_check_rejects_arguments(tmp_path, python_stub):
+    result = subprocess.run(["bash", str(REJOIN), "--extra"], cwd=tmp_path, env=python_stub,
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode != 0
+    assert "Usage:" in result.stderr
+    assert not Path(python_stub["PYTHON_ARGS"]).exists()
+
+
+@pytest.mark.parametrize("rejoin_after", [0, 2], ids=["already-in-sync", "catching-up"])
+def test_broker_rejoin_check_waits_for_full_isr(tmp_path, python_stub, rejoin_after):
+    script = rejoin_repo(tmp_path, python_stub, rejoin_after, records=3)
+    result = subprocess.run(["bash", str(script)], cwd=tmp_path, env=python_stub,
+                            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert "PASS: orders readable after rejoin, records=3" in result.stdout
+    assert "PASS: order_metrics readable after rejoin, records=3" in result.stdout
+    assert int(Path(python_stub["DESCRIBE_COUNT"]).read_text()) == rejoin_after + 2
+    assert ("Waiting for" in result.stdout) == (rejoin_after > 0)
+
+
+def test_broker_rejoin_check_fails_on_empty_topic(tmp_path, python_stub):
+    script = rejoin_repo(tmp_path, python_stub, rejoin_after=0, records=0)
+    result = subprocess.run(["bash", str(script)], cwd=tmp_path, env=python_stub,
+                            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 1
+    assert "FAIL: orders readable after rejoin, records=0" in result.stdout
+
+
+def test_broker_rejoin_check_times_out_without_rejoin(tmp_path, python_stub):
+    script = rejoin_repo(tmp_path, python_stub, rejoin_after=1000, records=3)
+    python_stub["FOODPIPE_REJOIN_WAIT"] = "2"
+    result = subprocess.run(["bash", str(script)], cwd=tmp_path, env=python_stub,
+                            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15)
+    assert result.returncode != 0
+    assert "Timed out waiting for both brokers in the ISR" in result.stderr
+    assert not Path(python_stub["PYTHON_ARGS"]).exists()
